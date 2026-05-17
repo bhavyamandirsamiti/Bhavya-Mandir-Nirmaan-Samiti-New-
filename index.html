@@ -6,18 +6,10 @@
     <meta name="theme-color" content="#FF9933">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="भव्य मन्दिर समिति">
-    <link rel="manifest" href="data:application/manifest+json,{
-        \"name\":\"भव्य मन्दिर निर्माण समिति\",
-        \"short_name\":\"मन्दिर APP\",
-        \"start_url\":\".\",
-        \"display\":\"standalone\",
-        \"orientation\":\"portrait\",
-        \"theme_color\":\"#FF9933\",
-        \"background_color\":\"#FF9933\",
-        \"icons\":[{\"src\":\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23FF9933' width='100' height='100'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E🛕%3C/text%3E%3C/svg%3E\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}]
-    }">
+    <meta name="apple-mobile-web-app-title" content="मन्दिर समिति">
+    <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23FF9933' width='100' height='100'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E🛕%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23FF9933' width='100' height='100'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E🛕%3C/text%3E%3C/svg%3E">
     <title>🚩 भव्य मन्दिर निर्माण समिति – गुलाबपुरा मोहनगढ़</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -136,9 +128,36 @@
         .year-selector select { width: auto; min-width: 100px; margin-bottom: 0; }
     </style>
     <script>
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => {
+                    console.log('Service Worker registered:', reg);
+                }).catch(err => {
+                    console.log('Service Worker registration failed:', err);
+                });
+            });
+        }
+        
         let deferredPrompt;
-        window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; const btn = document.getElementById('installAppBtn'); if(btn) btn.style.display = 'inline-flex'; });
-        function installApp() { if(deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.then(() => { deferredPrompt = null; const btn = document.getElementById('installAppBtn'); if(btn) btn.style.display = 'none'; }); } }
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const btn = document.getElementById('installAppBtn');
+            if(btn) btn.style.display = 'inline-flex';
+        });
+        
+        function installApp() {
+            if(deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(() => {
+                    deferredPrompt = null;
+                    const btn = document.getElementById('installAppBtn');
+                    if(btn) btn.style.display = 'none';
+                });
+            }
+        }
+        
         function refreshPage() { window.location.reload(); }
         const GOOGLE_DRIVE_FOLDER_ID = "1ekyVapMl-0Aq-QFVAL1ej5cjmzQmOQ0x";
         function backupToGoogleDrive() { let data = JSON.stringify(appData); let blob = new Blob([data], {type:'application/json'}); let a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mandir_backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href); showToast("बैकअप डाउनलोड हुआ"); window.open(`https://drive.google.com/drive/folders/${GOOGLE_DRIVE_FOLDER_ID}`, '_blank'); }
@@ -170,7 +189,7 @@
         <div class="user-info">
             <div class="back-btn" onclick="goBack()" style="display:none;" id="backBtn"><i class="fas fa-arrow-left"></i> वापस</div>
             <div class="lang-btn" onclick="toggleLanguage()" id="langBtn">🇮🇳 English</div>
-            <div class="install-btn" id="installAppBtn" onclick="installApp()" style="display:none;"><i class="fas fa-download"></i> ऐप</div>
+            <div class="install-btn" id="installAppBtn" onclick="installApp()" style="display:none;"><i class="fas fa-download"></i> ऐप इंस्टॉल करें</div>
             <div class="refresh-btn" id="refreshBtn" onclick="refreshPage()"><i class="fas fa-sync-alt"></i> रिफ्रेश</div>
             <span id="userName"></span>
             <span id="userRoleBadge" class="role-admin">Admin</span>
@@ -184,6 +203,64 @@
 </div>
 
 <script>
+    // Create manifest.json dynamically
+    (function createManifest() {
+        const manifest = {
+            name: "भव्य मन्दिर निर्माण समिति",
+            short_name: "मन्दिर APP",
+            start_url: ".",
+            display: "standalone",
+            orientation: "portrait",
+            theme_color: "#FF9933",
+            background_color: "#FF9933",
+            icons: [
+                {
+                    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23FF9933' width='100' height='100'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E🛕%3C/text%3E%3C/svg%3E",
+                    sizes: "any",
+                    type: "image/svg+xml",
+                    purpose: "any maskable"
+                }
+            ]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(manifestBlob);
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = manifestURL;
+        document.head.appendChild(link);
+    })();
+    
+    // Service Worker code
+    (function registerServiceWorker() {
+        const swCode = `self.addEventListener('install', event => {
+            self.skipWaiting();
+            event.waitUntil(
+                caches.open('mandir-v1').then(cache => {
+                    return cache.addAll([
+                        '/',
+                        '/index.html'
+                    ]);
+                })
+            );
+        });
+        self.addEventListener('fetch', event => {
+            event.respondWith(
+                caches.match(event.request).then(response => {
+                    return response || fetch(event.request);
+                })
+            );
+        });`;
+        const swBlob = new Blob([swCode], {type: 'application/javascript'});
+        const swURL = URL.createObjectURL(swBlob);
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register(swURL).then(reg => {
+                console.log('SW registered:', reg);
+            }).catch(err => {
+                console.log('SW registration failed:', err);
+            });
+        }
+    })();
+
     let appData = {
         settings: {
             committeeName: "🚩 भव्य मन्दिर निर्माण समिति 🚩",
@@ -234,9 +311,9 @@
 
     function toggleLanguage() { isHindi = !isHindi; document.getElementById('langBtn').innerHTML = isHindi ? "🇮🇳 English" : "🇮🇳 हिंदी"; renderNavigation(); renderCurrentPage(); }
     function getText(key) { return isHindi ? lang.hi[key] : lang.en[key]; }
-    function saveToLocal() { localStorage.setItem('temple_final_v37', JSON.stringify(appData)); }
+    function saveToLocal() { localStorage.setItem('temple_final_v38', JSON.stringify(appData)); }
     function loadFromLocal() {
-        let saved = localStorage.getItem('temple_final_v37');
+        let saved = localStorage.getItem('temple_final_v38');
         if(saved) { appData = JSON.parse(saved); } else { initSampleData(); }
         if(appData.users.length === 0) {
             appData.users = [
@@ -517,7 +594,6 @@
         const monthlyIncome = monthsShort.map((_,idx) => appData.donations.filter(d=>new Date(d.date).getMonth()===idx && new Date(d.date).getFullYear()===year).reduce((s,d)=>s+d.amount,0));
         const monthlyExpense = monthsShort.map((_,idx) => appData.expenses.filter(e=>new Date(e.date).getMonth()===idx && new Date(e.date).getFullYear()===year).reduce((s,e)=>s+e.amount,0));
         
-        // Prepare yearly data from 2022 to current year + next 3 years
         let yearlyLabels = [];
         let yearlyIncome = [];
         let yearlyExpense = [];
@@ -661,8 +737,8 @@
         window.open(`https://wa.me/91${appData.settings.presidentMobile}?text=${encodeURIComponent(msg)}`, '_blank');
     }
     function printMemberList() {
-        let rows = appData.members.filter(m=>m.status==='active').map(m=>`<tr><td style="color:var(--saffron);">${m.name}</td><td style="color:var(--teal);">${m.village}</td><td style="color:var(--gray);">${m.mobile}</td><td style="color:var(--danger);">₹${m.pending||0}</td></tr>`).join('');
-        let printContent = `<html><head><title>सदस्य सूची</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 सदस्य सूची</h2><table><thead><tr><th>नाम</th><th>गाँव</th><th>मोबाइल</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody></table><p>दिनांक: ${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष) | ${appData.settings.secretary} (सचिव)</p></body></html>`;
+        let rows = appData.members.filter(m=>m.status==='active').map(m=>`</td><td style="color:var(--saffron);">${m.name}</td><td style="color:var(--teal);">${m.village}</td><td style="color:var(--gray);">${m.mobile}</td><td style="color:var(--danger);">₹${m.pending||0}</td></tr>`).join('');
+        let printContent = `<html><head><title>सदस्य सूची</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 सदस्य सूची</h2><table><thead><tr><th>नाम</th><th>गाँव</th><th>मोबाइल</th><th>बकाया</th></table></thead><tbody>${rows}</tbody></table><p>दिनांक: ${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष) | ${appData.settings.secretary} (सचिव)</p></body></html>`;
         let win = window.open('', '_blank');
         win.document.write(printContent);
         win.document.close();
@@ -892,8 +968,8 @@
     function printCommittees() {
         let printContent = `<html><head><title>समिति सदस्य</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 समिति सदस्य सूची</h2>`;
         appData.committees.sort((a,b)=>b.year-a.year).forEach(c => {
-            printContent += `<h3>वर्ष ${c.year}</h3><table class="data-table"><thead><tr><th>पद</th><th>नाम</th></tr></thead><tbody>`;
-            c.members.forEach(m => { printContent += `<tr><td>${m.post}</td><td>${m.name}</td></tr>`; });
+            printContent += `<h3>वर्ष ${c.year}</h3><table class="data-table"><thead><tr><th>पद</th><th>नाम</th><tr></thead><tbody>`;
+            c.members.forEach(m => { printContent += `<tr><td style="color:var(--saffron);">${m.post}</td><td style="color:var(--teal);">${m.name}</td></tr>`; });
             printContent += `</tbody></table><br>`;
         });
         printContent += `<p>दिनांक: ${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष) | ${appData.settings.secretary} (सचिव)</p></body></html>`;
@@ -954,7 +1030,6 @@
         renderChangeAmount();
     }
 
-    // IMPROVED PAYMENT MODAL - Single column, clean layout, year selector, select all, and "ALL YEARS" option
     function renderDonations() {
         if(currentUser.role === 'viewer') { document.getElementById('contentArea').innerHTML = '<div class="card">❌ Viewer दान नहीं जोड़ सकता</div>'; return; }
         const curYear = new Date().getFullYear();
@@ -989,12 +1064,10 @@
         return pending;
     }
     
-    // Improved openPaymentModal - SINGLE COLUMN, clean layout, dynamic years, select all
     function openPaymentModal(memberId) {
         let m = appData.members.find(x=>x.id===memberId);
         if(!m) return;
         
-        // Get all pending months across all years
         let allMonths = getAllMonthsFromJoinTillNow(m.joinDate);
         let paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly').map(d => ({ year: d.year, month: d.month }));
         let pendingMap = new Map();
@@ -1010,7 +1083,6 @@
         if(years.length === 0) { showToast("कोई बकाया नहीं है", true); return; }
         
         let currentYear = years[0];
-        let monthsList = ['जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अगस्त', 'सितम्बर', 'अक्टूबर', 'नवम्बर', 'दिसम्बर'];
         
         let html = `<div class="modal"><div class="modal-content" style="max-width: 450px;">
             <h3 style="color:var(--saffron); margin-bottom:15px;">💰 भुगतान - ${m.name}</h3>
@@ -1100,7 +1172,6 @@
         addAuditLog("PAYMENT", `${m.name} - ${selectedMonths.length} months (${year})`);
     }
 
-    // Multi-year payment - ALL PENDING MONTHS across all years up to current month
     function openMultiYearPaymentModal(memberId) {
         let m = appData.members.find(x=>x.id===memberId);
         let allMonths = getAllMonthsFromJoinTillNow(m.joinDate);
@@ -1168,7 +1239,7 @@
     }
     function printPendingList() {
         let rows = appData.members.filter(m=>m.pending>0 && m.status==='active').map(m=>`<tr><td style="color:var(--saffron);">${m.name}</td><td style="color:var(--danger);">₹${m.pending}</td></tr>`).join('');
-        let printContent = `<html><head><title>बकाया सूची</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 बकाया सदस्य</h2><table><thead><tr><th>नाम</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody><tr><p>${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष)</p></body></html>`;
+        let printContent = `<html><head><title>बकाया सूची</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 बकाया सदस्य</h2><table><thead><tr><th>नाम</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody></table><p>${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष)</p></body></html>`;
         let win = window.open('', '_blank');
         win.document.write(printContent);
         win.document.close();
@@ -1197,7 +1268,7 @@
         window.open(`https://wa.me/91${appData.settings.presidentMobile}?text=${encodeURIComponent(msg)}`, '_blank');
     }
     function printAllReceipts() {
-        let printContent = `<html><head><title>सभी रसीदें</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 सभी रसीदें</h2></table><thead><tr><th>रसीद नं.</th><th>सदस्य</th><th>राशि</th><th>तिथि</th></tr></thead><tbody>`;
+        let printContent = `<html><head><title>सभी रसीदें</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 सभी रसीदें</h2><table><thead><tr><th>रसीद नं.</th><th>सदस्य</th><th>राशि</th><th>तिथि</th></tr></thead><tbody>`;
         appData.receipts.forEach(r => { printContent += `<tr><td style="color:var(--saffron);">${r.receiptNo}</td><td style="color:var(--teal);">${r.memberName}</td><td style="color:var(--success);">₹${r.amount}</td><td style="color:var(--gray);">${new Date(r.date).toLocaleDateString()}</td></tr>`; });
         printContent += `</tbody></table><p>${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष)</p></body></html>`;
         let win = window.open('', '_blank');
@@ -1285,7 +1356,7 @@
         let monthlyRows = months.map((m,i) => {
             let inc = appData.donations.filter(d=>new Date(d.date).getMonth()===i && new Date(d.date).getFullYear()==year).reduce((s,d)=>s+d.amount,0);
             let exp = appData.expenses.filter(e=>new Date(e.date).getMonth()===i && new Date(e.date).getFullYear()==year).reduce((s,e)=>s+e.amount,0);
-            return `<tr><td style="color:var(--saffron);">${m}</td><td style="color:var(--success);">₹${inc}</td><td style="color:var(--danger);">₹${exp}</td><td style="color:var(--orange);">₹${inc - exp}</td></tr>`;
+            return `<td><td style="color:var(--saffron);">${m}</td><td style="color:var(--success);">₹${inc}</td><td style="color:var(--danger);">₹${exp}</td><td style="color:var(--orange);">₹${inc - exp}</td></tr>`;
         }).join('');
         let printContent = `<html><head><title>लेजर ${year}</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 लेजर रिपोर्ट (${year})</h2>
         <p><strong>कुल आय:</strong> ₹${totalIncome}</p><p><strong>कुल व्यय:</strong> ₹${totalExpense}</p><p><strong>शेष:</strong> ₹${totalIncome - totalExpense}</p>
@@ -1297,12 +1368,11 @@
         win.print();
     }
 
-    // RAMCHARITMANAS - full table
     function renderRamcharitmanas() {
         let rows = appData.ramcharitmanas.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(p => `<tr><td style="color:var(--saffron);">${p.date}</td><td style="color:var(--cyan);">${p.nakshatra || 'पुष्य'}</td><td style="color:var(--teal);">${p.organizer}</td><td style="color:var(--gray);">${p.place || '-'}</td><td style="color:var(--gray);">${p.notes || '-'}</td><td style="color:var(--gray);">${canEdit() ? `<button class="btn-sm btn-danger" onclick="deletePath(${p.id})">🗑️</button>` : ''}</td>`).join('');
         document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठ (पुष्य नक्षत्र) - 2023 से लगातार</div>
         ${canEdit() ? `<button class="btn btn-primary mb-2" onclick="addPath()">+ नया पाठ</button>` : ''}
-        <div style="overflow-x:auto;"><table class="data-table"><thead><td><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th><th>नोट्स</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6">कोई डाटा नहीं</td>'}</tbody></table></div>
+        <div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th><th>नोट्स</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6">कोई डाटा नहीं<td>'}</tbody></table></div>
         <div class="mt-2"><button class="btn btn-success" onclick="shareRamcharitmanas()"><i class="fab fa-whatsapp"></i> WhatsApp पर भेजें</button><button class="btn btn-info" onclick="printRamcharitmanas()"><i class="fas fa-print"></i> प्रिंट करें</button></div></div>`;
     }
     function shareRamcharitmanas() {
@@ -1314,7 +1384,7 @@
         window.open(`https://wa.me/91${appData.settings.presidentMobile}?text=${encodeURIComponent(msg)}`, '_blank');
     }
     function printRamcharitmanas() {
-        let rows = appData.ramcharitmanas.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(p => `<tr><td style="color:var(--saffron);">${p.date}</td><td style="color:var(--cyan);">${p.nakshatra || 'पुष्य'}</td><td style="color:var(--teal);">${p.organizer}</td><td style="color:var(--gray);">${p.place || '-'}</td>`).join('');
+        let rows = appData.ramcharitmanas.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(p => `<tr><td style="color:var(--saffron);">${p.date}</td><td style="color:var(--cyan);">${p.nakshatra || 'पुष्य'}</td><td style="color:var(--teal);">${p.organizer}</td><td style="color:var(--gray);">${p.place || '-'}</tr>`).join('');
         let printContent = `<html><head><title>रामचरितमानस पाठ</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 रामचरितमानस पाठ सूची (पुष्य नक्षत्र)</h2>
         <table class="data-table"><thead><tr><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th></tr></thead><tbody>${rows}</tbody></table>
         <p>दिनांक: ${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष) | ${appData.settings.secretary} (सचिव)</p></body></html>`;
@@ -1437,7 +1507,7 @@
     function renderMonthlyReport() {
         let year = new Date().getFullYear();
         let months = ['जनवरी','फरवरी','मार्च','अप्रैल','मई','जून','जुलाई','अगस्त','सितम्बर','अक्टूबर','नवम्बर','दिसम्बर'];
-        let rows = months.map(m=>{ let amt = appData.donations.filter(d=>d.type==='monthly' && d.month===m && d.year===year).reduce((s,d)=>s+d.amount,0); return `<tr><td style="color:var(--saffron);">${m}</td><td style="color:var(--success);">₹${amt}</td></tr>`; }).join('');
+        let rows = months.map(m=>{ let amt = appData.donations.filter(d=>d.type==='monthly' && d.month===m && d.year===year).reduce((s,d)=>s+d.amount,0); return `<td><td style="color:var(--saffron);">${m}</td><td style="color:var(--success);">₹${amt}<tr></tr>`; }).join('');
         document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📅 मासिक रिपोर्ट ${year}</div><table class="data-table"><thead><tr><th>महीना</th><th>दान</th></tr></thead><tbody>${rows}</tbody></table><div class="mt-2"><button class="btn btn-success" onclick="shareMonthlyReport()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printMonthlyReportFn()">🖨️ प्रिंट</button></div></div>`;
     }
     function shareMonthlyReport() {
@@ -1454,7 +1524,7 @@
     function printMonthlyReportFn() {
         let year = new Date().getFullYear();
         let months = ['जनवरी','फरवरी','मार्च','अप्रैल','मई','जून','जुलाई','अगस्त','सितम्बर','अक्टूबर','नवम्बर','दिसम्बर'];
-        let rows = months.map(m=>{ let amt = appData.donations.filter(d=>d.type==='monthly' && d.month===m && d.year===year).reduce((s,d)=>s+d.amount,0); return `<tr><td style="color:var(--saffron);">${m}</td><td style="color:var(--success);">₹${amt}</td></tr>`; }).join('');
+        let rows = months.map(m=>{ let amt = appData.donations.filter(d=>d.type==='monthly' && d.month===m && d.year===year).reduce((s,d)=>s+d.amount,0); return `<tr><td style="color:var(--saffron);">${m}</td><td style="color:var(--success);">₹${amt}</td></table>`; }).join('');
         let printContent = `<html><head><title>मासिक रिपोर्ट ${year}</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 मासिक रिपोर्ट ${year}</h2><table><thead><tr><th>महीना</th><th>दान</th></tr></thead><tbody>${rows}</tbody></table><p>${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष)</p></body></html>`;
         let win = window.open('', '_blank');
         win.document.write(printContent);
@@ -1485,7 +1555,7 @@
             <tr><td style="color:var(--teal);">सामान्य दान</td><td style="color:var(--success);">₹${donationSources.general}</td></tr>
             <tr><td style="color:var(--teal);"><strong>कुल आय</strong></td><td style="color:var(--success); font-weight:bold;">₹${totalIncome}</td></tr>
             </tbody></table>
-            <h4 style="margin-top:15px; color:var(--danger);">💸 व्यय विवरण:</h4><table class="data-table"><thead><tr><th>श्रेणी</th><th>राशि (₹)</th></thead><tbody>${expenseRows || '<tr><td colspan="2">कोई व्यय नहीं</td></tr>'}<tr style="background:#f0f0f0;"><td><strong>कुल व्यय</strong></td><td><strong>₹${totalExpense}</strong></td></tr></tbody></table>
+            <h4 style="margin-top:15px; color:var(--danger);">💸 व्यय विवरण:</h4><table class="data-table"><thead><tr><th>श्रेणी</th><th>राशि (₹)</th></tr></thead><tbody>${expenseRows || '<tr><td colspan="2">कोई व्यय नहीं</td></tr>'}<tr style="background:#f0f0f0;"><td><strong>कुल व्यय</strong></td><td><strong>₹${totalExpense}</strong></td></tr></tbody></table>
             <div class="mt-2"><button class="btn btn-success" onclick="shareYearlyReportFn()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printYearlyReportFn()">🖨️ प्रिंट</button></div></div>`;
         document.getElementById('contentArea').innerHTML = html;
         document.getElementById('yearlyReportYear').addEventListener('change', () => renderYearlyReport());
@@ -1508,7 +1578,7 @@
         let advanceAmt = appData.donations.filter(d=>d.year==year && d.type==='advance').reduce((s,d)=>s+d.amount,0);
         let generalAmt = appData.donations.filter(d=>d.year==year && d.type==='general').reduce((s,d)=>s+d.amount,0);
         let printContent = `<html><head><title>वार्षिक रिपोर्ट ${year}</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 वार्षिक रिपोर्ट ${year}</h2>
-        <h3>💰 आय विवरण</h3><table class="data-table"><thead><th>माध्यम</th><th>राशि</th></thead><tbody>
+        <h3>💰 आय विवरण</h3><table class="data-table"><thead><tr><th>माध्यम</th><th>राशि</th></tr></thead><tbody>
         <tr><td style="color:var(--teal);">मासिक भुगतान</td><td style="color:var(--success);">₹${monthlyAmt}</td></tr>
         <tr><td style="color:var(--teal);">एडवांस जमा</td><td style="color:var(--success);">₹${advanceAmt}</td></tr>
         <tr><td style="color:var(--teal);">सामान्य दान</td><td style="color:var(--success);">₹${generalAmt}</td></tr>
@@ -1523,8 +1593,8 @@
     }
     function renderPendingReport() {
         computeAdvanceAndPending();
-        let rows = appData.members.filter(m=>m.pending>0 && m.status==='active').map(m=>`<tr><td style="color:var(--saffron);">${m.name}</td><td style="color:var(--danger);">₹${m.pending}</td></tr>`).join('');
-        document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">⚠️ बकाया रिपोर्ट</div><table class="data-table"><thead><tr><th>नाम</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody></table><div class="mt-2"><button class="btn btn-success" onclick="sharePendingReport()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printPendingReportFn()">🖨️ प्रिंट</button></div></div>`;
+        let rows = appData.members.filter(m=>m.pending>0 && m.status==='active').map(m=>`<td><td style="color:var(--saffron);">${m.name}</td><td style="color:var(--danger);">₹${m.pending}</td></tr>`).join('');
+        document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">⚠️ बकाया रिपोर्ट</div><table class="data-table"><thead><tr><th>नाम</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody><table><div class="mt-2"><button class="btn btn-success" onclick="sharePendingReport()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printPendingReportFn()">🖨️ प्रिंट</button></div></div>`;
     }
     function sharePendingReport() {
         let msg = `🚩 *${appData.settings.committeeName}* 🚩\n\n⚠️ *बकाया रिपोर्ट:*\n\n`;
@@ -1534,14 +1604,14 @@
     }
     function printPendingReportFn() {
         let rows = appData.members.filter(m=>m.pending>0 && m.status==='active').map(m=>`<tr><td style="color:var(--saffron);">${m.name}</td><td style="color:var(--danger);">₹${m.pending}</td></tr>`).join('');
-        let printContent = `<html><head><title>बकाया रिपोर्ट</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 बकाया रिपोर्ट</h2><table><thead><tr><th>नाम</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody></td><p>${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष)</p></body></html>`;
+        let printContent = `<html><head><title>बकाया रिपोर्ट</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>🚩 बकाया रिपोर्ट</h2><table><thead><tr><th>नाम</th><th>बकाया</th></tr></thead><tbody>${rows}</tbody></table><p>${new Date().toLocaleDateString()}</p><p>${appData.settings.president} (अध्यक्ष)</p></body></html>`;
         let win = window.open('', '_blank');
         win.document.write(printContent);
         win.document.close();
         win.print();
     }
     function renderAuditReport() {
-        let logs = appData.auditLogs.slice(0,50).map(l=>`<tr><td style="color:var(--gray);">${l.timestamp.slice(0,10)}</td><td style="color:var(--saffron);">${l.user} (${l.role})</td><td style="color:var(--teal);">${l.action}</td><td style="color:var(--gray);">${l.details}</td>`).join('');
+        let logs = appData.auditLogs.slice(0,50).map(l=>`<tr><td style="color:var(--gray);">${l.timestamp.slice(0,10)}</td><td style="color:var(--saffron);">${l.user} (${l.role})</td><td style="color:var(--teal);">${l.action}</td><td style="color:var(--gray);">${l.details}</td></tr>`).join('');
         document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📋 ऑडिट लॉग</div><table class="data-table"><thead><th>तिथि</th><th>उपयोगकर्ता</th><th>कार्य</th><th>विवरण</th></thead><tbody>${logs}</tbody></table></div>`;
     }
 
