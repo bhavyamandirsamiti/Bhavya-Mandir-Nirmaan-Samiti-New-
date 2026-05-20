@@ -226,7 +226,7 @@
                 appData.members.filter(m=>m.status==='active').forEach((m, i) => {
                     printContent += `<tr><td style="color:#FF9933;">${i+1}</td><td style="color:#333;">${m.name}</td><td style="color:#17a2b8;">${m.village||'-'}</td><td style="color:#6c757d;">${m.mobile||'-'}</td><td style="color:#20c997;">₹${m.monthlyAmount}</td><td style="color:#dc3545;">₹${m.pending||0}</td></tr>`;
                 });
-                printContent += '</tbody></table>';
+                printContent += '</tbody></td>';
             } else if (type === 'ledger') {
                 let totalIncome = appData.donations.reduce((s,d)=>s+d.amount,0);
                 let totalExpense = appData.expenses.reduce((s,e)=>s+e.amount,0);
@@ -349,7 +349,207 @@
     let dataLoaded = false;
     let pendingLoads = 18;
     
-    // Firebase Save Functions
+    // ========== PERMISSION SYSTEM WITH DOUBLE VERIFICATION ==========
+    function canPerformAction(actionType, dataType, dataId, additionalData = null) {
+        if(!currentUser) return false;
+        
+        // VIEWER: सिर्फ देख सकता है, बाकी सबके लिए request
+        if(currentUser.role === 'viewer') {
+            let request = {
+                id: Date.now(),
+                action: actionType,
+                dataType: dataType,
+                dataId: dataId,
+                additionalData: additionalData,
+                requestedBy: currentUser.name,
+                requestedByRole: currentUser.role,
+                requiredApprovalRole: 'admin',
+                status: 'pending',
+                comment: additionalData?.comment || "डाटा गलत है, कृपया जांच करें",
+                createdAt: new Date().toISOString()
+            };
+            appData.dataChangeRequests.push(request);
+            saveDataChangeRequestsToFirebase();
+            showToast(`📝 आपकी शिकायत एडमिन के पास भेज दी गई है।`);
+            updatePendingBadge();
+            showPushNotification("📢 नई शिकायत", `${currentUser.name} ने डाटा गलत बताया`);
+            return false;
+        }
+        
+        // OPERATOR: दान/भुगतान कर सकता है, लेकिन एडिट/डिलीट के लिए request
+        if(currentUser.role === 'operator') {
+            if(actionType === 'add' && dataType === 'donation') {
+                return true; // दान/भुगतान कर सकता है
+            }
+            if(actionType === 'add' && dataType === 'member') {
+                // नया सदस्य जोड़ना operator कर सकता है
+                return true;
+            }
+            if(actionType === 'add' && dataType === 'expense') {
+                return true;
+            }
+            // बाकी सबके लिए request
+            let request = {
+                id: Date.now(),
+                action: actionType,
+                dataType: dataType,
+                dataId: dataId,
+                additionalData: additionalData,
+                requestedBy: currentUser.name,
+                requestedByRole: currentUser.role,
+                requiredApprovalRole: 'admin',
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            };
+            appData.pendingRequests.push(request);
+            savePendingRequestsToFirebase();
+            showToast(`⏳ आपकी रिक्वेस्ट एडमिन के पास भेज दी गई है।`);
+            updatePendingBadge();
+            showPushNotification("📢 नई रिक्वेस्ट", `${currentUser.name} ने ${actionType} की request भेजी`);
+            return false;
+        }
+        
+        // ADMIN: बड़े सुधार के लिए दूसरे admin/super admin की सहमति चाहिए
+        if(currentUser.role === 'admin') {
+            if(actionType === 'delete' || (actionType === 'edit' && dataType === 'settings') || actionType === 'bulk_delete') {
+                // इन कामों के लिए दूसरे admin की सहमति चाहिए
+                let request = {
+                    id: Date.now(),
+                    action: actionType,
+                    dataType: dataType,
+                    dataId: dataId,
+                    additionalData: additionalData,
+                    requestedBy: currentUser.name,
+                    requestedByRole: currentUser.role,
+                    requiredApprovalRole: 'admin',
+                    status: 'pending',
+                    requiresDoubleVerification: true,
+                    createdAt: new Date().toISOString()
+                };
+                appData.pendingRequests.push(request);
+                savePendingRequestsToFirebase();
+                showToast(`⏳ यह कार्य करने के लिए दूसरे एडमिन/सुपर एडमिन की अनुमति आवश्यक है। रिक्वेस्ट भेज दी गई है।`);
+                updatePendingBadge();
+                showPushNotification("📢 डबल वेरिफिकेशन", `${currentUser.name} ने ${actionType} की अनुमति मांगी`);
+                return false;
+            }
+            return true;
+        }
+        
+        // SUPER ADMIN: बड़े सुधार के लिए admin की सहमति चाहिए
+        if(currentUser.role === 'super_admin') {
+            if(actionType === 'delete' && dataType === 'member') {
+                let admins = appData.users.filter(u => u.role === 'admin');
+                if(admins.length > 0) {
+                    let request = {
+                        id: Date.now(),
+                        action: actionType,
+                        dataType: dataType,
+                        dataId: dataId,
+                        additionalData: additionalData,
+                        requestedBy: currentUser.name,
+                        requestedByRole: currentUser.role,
+                        requiredApprovalRole: 'admin',
+                        status: 'pending',
+                        requiresDoubleVerification: true,
+                        createdAt: new Date().toISOString()
+                    };
+                    appData.pendingRequests.push(request);
+                    savePendingRequestsToFirebase();
+                    showToast(`⏳ इस कार्य के लिए एडमिन की अनुमति आवश्यक है। रिक्वेस्ट भेज दी गई है।`);
+                    updatePendingBadge();
+                    showPushNotification("📢 डबल वेरिफिकेशन", `${currentUser.name} ने ${actionType} की अनुमति मांगी`);
+                    return false;
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+    
+    function approveRequest(requestId) {
+        let req = appData.pendingRequests.find(r => r.id === requestId);
+        if(req) {
+            appData.pendingRequests = appData.pendingRequests.filter(r => r.id !== requestId);
+            savePendingRequestsToFirebase();
+            showToast(`✅ रिक्वेस्ट स्वीकृत कर ली गई।`);
+            addAuditLog("REQUEST_APPROVED", `${req.requestedBy} की ${req.action} रिक्वेस्ट स्वीकृत`);
+            updatePendingBadge();
+            showPushNotification("✅ रिक्वेस्ट स्वीकृत", `${req.requestedBy} की ${req.action} अनुमति मिल गई`);
+            renderCurrentPage();
+        }
+    }
+    
+    function rejectRequest(requestId) {
+        appData.pendingRequests = appData.pendingRequests.filter(r => r.id !== requestId);
+        savePendingRequestsToFirebase();
+        showToast(`❌ रिक्वेस्ट अस्वीकृत कर दी गई।`);
+        addAuditLog("REQUEST_REJECTED", `रिक्वेस्ट ID: ${requestId} अस्वीकृत`);
+        updatePendingBadge();
+        renderCurrentPage();
+    }
+    
+    function canEdit() { 
+        if(!currentUser) return false;
+        if(currentUser.role === 'operator') return false;
+        if(currentUser.role === 'viewer') return false;
+        return true; 
+    }
+    
+    function canDelete() { 
+        if(!currentUser) return false;
+        if(currentUser.role === 'operator') return false;
+        if(currentUser.role === 'viewer') return false;
+        return true; 
+    }
+    
+    function canEditUser() { 
+        if(!currentUser) return false;
+        if(currentUser.role === 'operator') return false;
+        if(currentUser.role === 'viewer') return false;
+        return currentUser.role === 'super_admin'; 
+    }
+    
+    function canSendReceipt() { 
+        if(!currentUser) return false;
+        if(currentUser.role === 'viewer') return false;
+        return true; 
+    }
+    
+    function canSendBulkMessage() { 
+        if(!currentUser) return false;
+        if(currentUser.role === 'operator') return false;
+        if(currentUser.role === 'viewer') return false;
+        return true; 
+    }
+    
+    function canSendReminder() { 
+        if(!currentUser) return false;
+        if(currentUser.role === 'viewer') return false;
+        return true; 
+    }
+    
+    function addCommentOnData(dataType, dataId, comment) {
+        let request = {
+            id: Date.now(),
+            action: 'comment',
+            dataType: dataType,
+            dataId: dataId,
+            comment: comment,
+            requestedBy: currentUser.name,
+            requestedByRole: currentUser.role,
+            requiredApprovalRole: 'admin',
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        };
+        appData.dataChangeRequests.push(request);
+        saveDataChangeRequestsToFirebase();
+        showToast(`📝 आपकी टिप्पणी एडमिन के पास भेज दी गई है।`);
+        updatePendingBadge();
+        showPushNotification("📢 नई टिप्पणी", `${currentUser.name} ने ${dataType} पर टिप्पणी की`);
+    }
+    
+    // ========== FIREBASE SAVE FUNCTIONS ==========
     function saveSettingsToFirebase() { database.ref('settings').set(appData.settings); }
     function saveMembersToFirebase() { let obj = {}; appData.members.forEach(m => { obj[m.id] = m; }); database.ref('members').set(obj); }
     function saveDonationsToFirebase() { let obj = {}; appData.donations.forEach(d => { obj[d.id] = d; }); database.ref('donations').set(obj); }
@@ -517,22 +717,6 @@
         addAuditLog(`EDIT_${type}`, `${type} संपादित किया गया ${currentUser?.name} (${currentUser?.role}) द्वारा - कारण: ${reason}`); 
     }
     
-    function canPerformAction(actionType, dataType, dataId) {
-        if(!currentUser) return false;
-        if(currentUser.role === 'super_admin') return true;
-        if(currentUser.role === 'admin') return true;
-        if(currentUser.role === 'operator' && (actionType === 'add' || actionType === 'edit')) return true;
-        if(currentUser.role === 'viewer' && actionType === 'view') return true;
-        return false;
-    }
-    
-    function canEdit() { return currentUser?.role === 'super_admin' || currentUser?.role === 'admin'; }
-    function canDelete() { return currentUser?.role === 'super_admin' || currentUser?.role === 'admin'; }
-    function canEditUser() { return currentUser?.role === 'super_admin'; }
-    function canSendReceipt() { return ['super_admin', 'admin', 'operator'].includes(currentUser?.role); }
-    function canSendBulkMessage() { return ['super_admin', 'admin'].includes(currentUser?.role); }
-    function canSendReminder() { return currentUser?.role !== 'viewer'; }
-    
     let nextReceiptCounter = 1;
     function getNextReceiptNo() { return `आरईसी-${String(nextReceiptCounter++).padStart(5,'0')}`; }
     function getDynamicYears(startYear = 2024) { let currentYear = new Date().getFullYear(); let years = []; for(let y = startYear; y <= currentYear + 10; y++) years.push(y); return years; }
@@ -594,7 +778,7 @@
     function switchMain(id) { pushToStack(currentMain, currentSub); currentMain = id; if(subTabsConfig[id] && subTabsConfig[id].length > 0) { currentSub = subTabsConfig[id][0].id; } else { currentSub = "dashboard"; } renderNavigation(); renderCurrentPage(); }
     function switchSub(id) { pushToStack(currentMain, currentSub); currentSub = id; renderNavigation(); renderCurrentPage(); }
     
-    // Helper: Get all months from join date till now or till a given year
+    // Helper: Get all months till now
     function getAllMonthsTillNow(joinDate, upToYear = null) {
         const join = new Date(joinDate);
         const now = upToYear ? new Date(upToYear, 11, 31) : new Date();
@@ -610,8 +794,10 @@
         return months;
     }
     
-    // ========== PAYMENT MODAL WITH CHECKBOXES (ORIGINAL STYLE) ==========
+    // ========== PAYMENT MODAL WITH CHECKBOXES ==========
     function openPaymentModal(memberId) {
+        if(!canSendReceipt()) { showToast("⚠️ आप दान नहीं जोड़ सकते", true); return; }
+        
         let m = appData.members.find(x => x.id === memberId);
         if(!m) { showToast("सदस्य नहीं मिला", true); return; }
         
@@ -729,6 +915,7 @@
         generateReceipt(m, paidMonthsList, totalAmount, mode, "मासिक भुगतान");
         showToast(`✅ ${selectedMonths.length} महीनों का भुगतान सफल`);
         addAuditLog("PAYMENT", `${m.name} - ${selectedMonths.length} महीने`);
+        showPushNotification("💰 भुगतान", `${m.name} ने ₹${totalAmount} का भुगतान किया`);
     };
     
     function generateReceipt(member, paidMonthsList, totalAmount, mode, purpose) {
@@ -750,7 +937,53 @@
         showToast(`✅ रसीद ${receiptNo} सेव हो गई और WhatsApp पर भेज दी गई`);
     }
     
-    // ========== RENDER DASHBOARD ==========
+    function generateDetailedReminderMessage(m) { 
+        const allMonths = getAllMonthsFromJoinTillNow(m.joinDate); 
+        let monthStatus = ''; 
+        let totalPaid = 0; 
+        for(let item of allMonths) { 
+            let isPaid = appData.donations.some(d => d.memberId === m.id && d.month === item.month && d.year === item.year && d.type === 'monthly'); 
+            if(isPaid) { 
+                monthStatus += `🗓️ ${item.month} ${item.year}: ✅ ₹${getMonthlyAmountForDate(m, new Date(item.year, item.monthIndex, 1))} (जमा है)\n`; 
+                totalPaid += getMonthlyAmountForDate(m, new Date(item.year, item.monthIndex, 1)); 
+            } else { 
+                monthStatus += `🗓️ ${item.month} ${item.year}: ⭕ ₹${getMonthlyAmountForDate(m, new Date(item.year, item.monthIndex, 1))} शेष राशि (देय है)\n`; 
+            } 
+        } 
+        let upiUrl = `upi://pay?pa=${appData.settings.upiId}&pn=${encodeURIComponent(m.name)}&am=${m.pending}&cu=INR`;
+        let qrHtml = `\n\n👇 *QR कोड स्कैन करें:*\n${upiUrl}\n`;
+        return `🚩 *जय श्री राम* 🚩\n\nआदरणीय *${m.name} जी*,\nभव्य मन्दिर निर्माण समिति आपके निरंतर सहयोग हेतु हृदय से आभारी है।\n\nआपका मासिक विवरण (ज्वाइन डेट: ${m.joinDate}) इस प्रकार है:\n\n${monthStatus}\n--------------------------------\n💰 *कुल प्राप्त सहयोग: ₹${totalPaid}*\n⚠️ *कुल शेष बकाया: ₹${m.pending}*\n💸 *UPI ID: ${appData.settings.upiId}*\n${qrHtml}\n--------------------------------\n🙏 *करबद्ध निवेदन:* कृपया अपनी शेष राशि *₹${m.pending}* जमा करें।\n\nभवदीय,\n${appData.settings.president} (अध्यक्ष)\n${appData.settings.secretary} (सचिव)`; 
+    }
+    
+    let bulkInterval = null, bulkIndex = 0, bulkMembers = [];
+    function startBulkMessage() { 
+        if(!canSendBulkMessage()) { showToast("⚠️ आप बल्क मैसेज नहीं भेज सकते", true); return; } 
+        if(bulkInterval) clearInterval(bulkInterval); 
+        bulkMembers = appData.members.filter(m => m.status === 'active' && m.mobile); 
+        if(bulkMembers.length === 0) { showToast("⚠️ कोई सदस्य नहीं है", true); return; } 
+        bulkIndex = 0; 
+        showToast(`📨 बल्क मैसेज शुरू... ${bulkMembers.length} सदस्य, 20 सेकंड का अंतराल`); 
+        sendNextBulk(); 
+        bulkInterval = setInterval(() => sendNextBulk(), 20000); 
+    }
+    
+    function sendNextBulk() { 
+        if(bulkIndex >= bulkMembers.length) { 
+            clearInterval(bulkInterval); bulkInterval = null; 
+            showToast("✅ सभी सदस्यों को मैसेज भेज दिया गया!"); 
+            addAuditLog("बल्क_मैसेज", `कुल ${bulkMembers.length} सदस्य`); 
+            return; 
+        } 
+        let m = bulkMembers[bulkIndex]; 
+        let msg = generateDetailedReminderMessage(m); 
+        window.open(`https://wa.me/91${m.mobile}?text=${encodeURIComponent(msg)}`, '_blank'); 
+        showToast(`📤 ${bulkIndex+1}/${bulkMembers.length}: ${m.name}`); 
+        addAuditLog("बल्क_मैसेज_भेजा", m.name); 
+        bulkIndex++; 
+    }
+    
+    function stopBulkMessage() { if(bulkInterval) { clearInterval(bulkInterval); bulkInterval = null; showToast("⏹️ बल्क मैसेज रोक दिया गया"); } }
+    
     function renderDashboard() { 
         computeAdvanceAndPending(); 
         const totalMembers = appData.members.filter(m=>m.status==='active').length; 
@@ -809,53 +1042,6 @@
         const pendingMems = appData.members.filter(m=>m.pending>0).slice(0,5); 
         document.getElementById('pendingAlertList').innerHTML = pendingMems.map(m=>`<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div>`).join(''); 
     }
-    
-    function generateDetailedReminderMessage(m) { 
-        const allMonths = getAllMonthsFromJoinTillNow(m.joinDate); 
-        let monthStatus = ''; 
-        let totalPaid = 0; 
-        for(let item of allMonths) { 
-            let isPaid = appData.donations.some(d => d.memberId === m.id && d.month === item.month && d.year === item.year && d.type === 'monthly'); 
-            if(isPaid) { 
-                monthStatus += `🗓️ ${item.month} ${item.year}: ✅ ₹${getMonthlyAmountForDate(m, new Date(item.year, item.monthIndex, 1))} (जमा है)\n`; 
-                totalPaid += getMonthlyAmountForDate(m, new Date(item.year, item.monthIndex, 1)); 
-            } else { 
-                monthStatus += `🗓️ ${item.month} ${item.year}: ⭕ ₹${getMonthlyAmountForDate(m, new Date(item.year, item.monthIndex, 1))} शेष राशि (देय है)\n`; 
-            } 
-        } 
-        let upiUrl = `upi://pay?pa=${appData.settings.upiId}&pn=${encodeURIComponent(m.name)}&am=${m.pending}&cu=INR`;
-        let qrHtml = `\n\n👇 *QR कोड स्कैन करें:*\n${upiUrl}\n`;
-        return `🚩 *जय श्री राम* 🚩\n\nआदरणीय *${m.name} जी*,\nभव्य मन्दिर निर्माण समिति आपके निरंतर सहयोग हेतु हृदय से आभारी है।\n\nआपका मासिक विवरण (ज्वाइन डेट: ${m.joinDate}) इस प्रकार है:\n\n${monthStatus}\n--------------------------------\n💰 *कुल प्राप्त सहयोग: ₹${totalPaid}*\n⚠️ *कुल शेष बकाया: ₹${m.pending}*\n💸 *UPI ID: ${appData.settings.upiId}*\n${qrHtml}\n--------------------------------\n🙏 *करबद्ध निवेदन:* कृपया अपनी शेष राशि *₹${m.pending}* जमा करें।\n\nभवदीय,\n${appData.settings.president} (अध्यक्ष)\n${appData.settings.secretary} (सचिव)`; 
-    }
-    
-    let bulkInterval = null, bulkIndex = 0, bulkMembers = [];
-    function startBulkMessage() { 
-        if(!canSendBulkMessage()) { showToast("⚠️ आप बल्क मैसेज नहीं भेज सकते", true); return; } 
-        if(bulkInterval) clearInterval(bulkInterval); 
-        bulkMembers = appData.members.filter(m => m.status === 'active' && m.mobile); 
-        if(bulkMembers.length === 0) { showToast("⚠️ कोई सदस्य नहीं है", true); return; } 
-        bulkIndex = 0; 
-        showToast(`📨 बल्क मैसेज शुरू... ${bulkMembers.length} सदस्य, 20 सेकंड का अंतराल`); 
-        sendNextBulk(); 
-        bulkInterval = setInterval(() => sendNextBulk(), 20000); 
-    }
-    
-    function sendNextBulk() { 
-        if(bulkIndex >= bulkMembers.length) { 
-            clearInterval(bulkInterval); bulkInterval = null; 
-            showToast("✅ सभी सदस्यों को मैसेज भेज दिया गया!"); 
-            addAuditLog("बल्क_मैसेज", `कुल ${bulkMembers.length} सदस्य`); 
-            return; 
-        } 
-        let m = bulkMembers[bulkIndex]; 
-        let msg = generateDetailedReminderMessage(m); 
-        window.open(`https://wa.me/91${m.mobile}?text=${encodeURIComponent(msg)}`, '_blank'); 
-        showToast(`📤 ${bulkIndex+1}/${bulkMembers.length}: ${m.name}`); 
-        addAuditLog("बल्क_मैसेज_भेजा", m.name); 
-        bulkIndex++; 
-    }
-    
-    function stopBulkMessage() { if(bulkInterval) { clearInterval(bulkInterval); bulkInterval = null; showToast("⏹️ बल्क मैसेज रोक दिया गया"); } }
     
     function sendReminder(id) { 
         if(!canSendReminder()) { showToast("⚠️ आप रिमाइंडर नहीं भेज सकते", true); return; } 
@@ -949,6 +1135,7 @@
     }
     
     function deleteUser(id) { 
+        if(!canPerformAction('delete', 'user', id)) return;
         if(confirm("क्या आप इस यूजर को हटाना चाहते हैं?")) { 
             appData.users = appData.users.filter(u=>u.id!==id); 
             saveToLocal(); 
@@ -995,6 +1182,7 @@
     
     function bulkDeleteMembers() {
         if(selectedMembers.length === 0) return;
+        if(!canPerformAction('delete', 'member', 'bulk')) return;
         if(confirm(`क्या आप ${selectedMembers.length} सदस्यों को हटाना चाहते हैं?`)) {
             appData.members = appData.members.filter(m => !selectedMembers.includes(m.id));
             saveToLocal();
@@ -1006,6 +1194,7 @@
     }
     
     function deleteMember(id) {
+        if(!canPerformAction('delete', 'member', id)) return;
         if(confirm("क्या आप सदस्य को हटाना चाहते हैं?")) {
             appData.members = appData.members.filter(m => m.id !== id);
             saveToLocal();
@@ -1033,7 +1222,7 @@
         let html = `<div class="modal"><div class="modal-content"><h3>📜 ${m.name} का भुगतान इतिहास</h3><p><strong>कुल दान:</strong> ₹${total}</p><div class="payment-history"><div style="overflow-x:auto;"><table class="data-table"><thead><th>तिथि</th><th>राशि</th><th>मोड</th><th>रसीद नं.</th></thead><tbody>`;
         if(payments.length === 0) html += `<tr><td colspan="4">कोई भुगतान नहीं</td></tr>`;
         else payments.reverse().forEach(p => { html += `<tr><td style="color:var(--saffron);">${new Date(p.date).toLocaleDateString('hi-IN')}</td><td style="color:var(--success);">₹${p.amount}</td><td style="color:var(--gray);">${p.mode || 'कैश'}</td><td style="color:var(--gray);">${p.receiptNo || '-'}</td></tr>`; });
-        html += `</tbody></td></div><button class="btn btn-primary mt-2" onclick="printMemberPaymentHistory(${id})"><i class="fas fa-print"></i> प्रिंट करें</button><button class="btn btn-secondary mt-2" onclick="closeModal()">बंद करें</button></div></div>`;
+        html += `</tbody></table></div><button class="btn btn-primary mt-2" onclick="printMemberPaymentHistory(${id})"><i class="fas fa-print"></i> प्रिंट करें</button><button class="btn btn-secondary mt-2" onclick="closeModal()">बंद करें</button></div></div>`;
         document.body.insertAdjacentHTML('beforeend', html);
     }
     
@@ -1044,7 +1233,7 @@
         let rows = '';
         payments.forEach(p => { rows += `<tr><td style="color:var(--saffron);">${new Date(p.date).toLocaleDateString('hi-IN')}</td><td style="color:var(--success);">₹${p.amount}</td><td style="color:var(--gray);">${p.mode || 'कैश'}</td><td style="color:var(--gray);">${p.receiptNo || '-'}</td></tr>`; });
         let win = window.open('', '_blank');
-        win.document.write(`<html><head><title>${m.name} का भुगतान इतिहास</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>${m.name} का भुगतान इतिहास</h2><table class="data-table"><thead><th>तिथि</th><th>राशि</th><th>मोड</th><th>रसीद नं.</th></thead><tbody>${rows}</tbody><tfoot><tr style="background:#f0f0f0;"><th>कुल योग</th><th colspan="3">₹${total}</th></tr></tfoot></table><p>दिनांक: ${new Date().toLocaleDateString('hi-IN')}</p><p>${appData.settings.president} (अध्यक्ष)</p><button onclick="window.print()">🖨️ प्रिंट करें</button> <button onclick="window.close()">बंद करें</button></body></html>`);
+        win.document.write(`<html><head><title>${m.name} का भुगतान इतिहास</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>${m.name} का भुगतान इतिहास</h2><table class="data-table"><thead><th>तिथि</th><th>राशि</th><th>मोड</th><th>रसीद नं.</th></thead><tbody>${rows}</tbody><tfoot><tr style="background:#f0f0f0;"><th>कुल योग</th><th colspan="3">₹${total}</th></tr></tfoot><td><p>दिनांक: ${new Date().toLocaleDateString('hi-IN')}</p><p>${appData.settings.president} (अध्यक्ष)</p><button onclick="window.print()">🖨️ प्रिंट करें</button> <button onclick="window.close()">बंद करें</button></body></html>`);
         win.document.close();
     }
     
@@ -1397,37 +1586,13 @@
     }
     
     function openMultiYearPaymentModal(memberId) { 
-        let m = appData.members.find(x=>x.id===memberId); 
-        let allMonths = getAllMonthsFromJoinTillNow(m.joinDate); 
-        let paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly').map(d => ({ year: d.year, monthIndex: d.monthIndex })); 
-        let pendingItems = []; 
-        for(let item of allMonths) { 
-            if(!paidMonths.some(p => p.year === item.year && p.monthIndex === item.monthIndex)) { 
-                pendingItems.push({ year: item.year, monthIndex: item.monthIndex, monthName: item.month }); 
-            } 
-        } 
-        if(pendingItems.length === 0) { showToast("⚠️ कोई बकाया नहीं है", true); return; } 
-        let totalAmount = pendingItems.length * m.monthlyAmount;
-        if(confirm(`कुल ${pendingItems.length} महीने बकाया हैं। कुल राशि: ₹${totalAmount}। क्या आप भुगतान करना चाहते हैं?`)) {
-            let paidMonthsList = [];
-            for(let p of pendingItems) {
-                let donation = { id: Date.now(), memberId, memberName: m.name, type: "monthly", month: p.monthName, monthIndex: p.monthIndex, year: p.year, amount: m.monthlyAmount, receiptNo: getNextReceiptNo(), date: new Date().toISOString().slice(0,10), mode: "cash", created_by: currentUser.name };
-                appData.donations.push(donation);
-                paidMonthsList.push({ month: p.monthName, year: p.year, amount: m.monthlyAmount });
-            }
-            computeAdvanceAndPending();
-            saveToLocal();
-            generateReceipt(m, paidMonthsList, totalAmount, "cash", "मासिक भुगतान (सभी बकाया)");
-            showToast(`✅ ₹${totalAmount} का भुगतान सफल`);
-            addAuditLog("MULTI_PAYMENT", `${m.name} - ${pendingItems.length} महीने`);
-            renderCurrentPage();
-        }
+        openPaymentModal(memberId);
     }
     
     function renderPendingList() { 
         computeAdvanceAndPending(); 
         let pendingMembers = appData.members.filter(m=>m.pending>0 && m.status==='active'); 
-        let html = pendingMembers.map(m => `<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span><div><button class="btn-sm btn-success" onclick="openPaymentModal(${m.id})">💳 भुगतान</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div></div>`).join(''); 
+        let html = pendingMembers.map(m => `<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span><div><button class="btn-sm btn-success" onclick="openPaymentModal(${m.id})">💰 भुगतान</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div></div>`).join(''); 
         document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">⚠️ बकाया सदस्य</div><div><button class="btn btn-success" onclick="sharePendingList()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printReport('pending')"><i class="fas fa-print"></i> प्रिंट</button><button class="btn btn-primary" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> एक्सेल</button></div>${html}</div>`; 
     }
     
@@ -1557,7 +1722,7 @@
                 totalExpense += expense;
                 monthlyRows += `<tr><td style="color:var(--saffron);">${months[i]}<td style="color:var(--success);">₹${income.toFixed(2)}<td style="color:var(--danger);">₹${expense.toFixed(2)}<td style="color:${income - expense >= 0 ? 'var(--success)' : 'var(--danger)'};">₹${(income - expense).toFixed(2)}</td>`;
             }
-            let contentHtml = `<div class="yearly-stats"><div class="yearly-stat-card"><h4>कुल आय</h4><p style="color:var(--success);">₹${totalIncome.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>कुल व्यय</h4><p style="color:var(--danger);">₹${totalExpense.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>शेष</h4><p style="color:var(--saffron);">₹${(totalIncome - totalExpense).toFixed(2)}</p></div></div><div style="overflow-x:auto;"><table class="data-table"><thead><th>महीना</th><th>आय (₹)</th><th>व्यय (₹)</th><th>लाभ/हानि</th></thead><tbody>${monthlyRows}</tbody><tfoot><tr style="background:#f0f0f0; font-weight:bold;"><th>कुल योग</th><td style="color:var(--success);">₹${totalIncome.toFixed(2)}</th><td style="color:var(--danger);">₹${totalExpense.toFixed(2)}</th><td style="color:${totalIncome - totalExpense >= 0 ? 'var(--success)' : 'var(--danger)'};">₹${(totalIncome - totalExpense).toFixed(2)}</th><tr></tfoot></div>`;
+            let contentHtml = `<div class="yearly-stats"><div class="yearly-stat-card"><h4>कुल आय</h4><p style="color:var(--success);">₹${totalIncome.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>कुल व्यय</h4><p style="color:var(--danger);">₹${totalExpense.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>शेष</h4><p style="color:var(--saffron);">₹${(totalIncome - totalExpense).toFixed(2)}</p></div></div><div style="overflow-x:auto;"><table class="data-table"><thead><th>महीना</th><th>आय (₹)</th><th>व्यय (₹)</th><th>लाभ/हानि</th></thead><tbody>${monthlyRows}</tbody><tfoot><tr style="background:#f0f0f0; font-weight:bold;"><th>कुल योग</th><td style="color:var(--success);">₹${totalIncome.toFixed(2)}</th><td style="color:var(--danger);">₹${totalExpense.toFixed(2)}</th><td style="color:${totalIncome - totalExpense >= 0 ? 'var(--success)' : 'var(--danger)'};">₹${(totalIncome - totalExpense).toFixed(2)}</th></tr></tfoot></div>`;
             document.getElementById('ledgerContent').innerHTML = contentHtml;
         }
         updateLedgerContent();
@@ -1574,7 +1739,7 @@
     
     function renderRamcharitmanas() { 
         let rows = appData.ramcharitmanas.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(p => `<tr><td style="color:var(--saffron);">${p.date}</td><td style="color:var(--cyan);">${p.nakshatra || 'पुष्य'}</td><td style="color:var(--teal);">${p.organizer}</td><td style="color:var(--gray);">${p.place || '-'}</td><td style="color:var(--gray);">${p.notes || '-'}</td><td style="color:var(--gray);">${canDelete() ? `<button class="btn-sm btn-danger" onclick="deletePath(${p.id})">🗑️</button>` : ''}</td></tr>`).join(''); 
-        document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठ (पुष्य नक्षत्र)</div>${canEdit() ? `<button class="btn btn-primary" onclick="addPath()">+ नया पाठ</button>` : ''}<div style="overflow-x:auto;"><table class="data-table"><thead><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th><th>नोट्स</th><th></th></thead><tbody>${rows || '</td><td colspan="6">कोई डाटा नहीं<th>'}</tbody></table></div><div class="mt-2"><button class="btn btn-success" onclick="shareRamcharitmanas()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printReport('members')"><i class="fas fa-print"></i> प्रिंट</button></div></div>`; 
+        document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठ (पुष्य नक्षत्र)</div>${canEdit() ? `<button class="btn btn-primary" onclick="addPath()">+ नया पाठ</button>` : ''}<div style="overflow-x:auto;"><table class="data-table"><thead><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th><th>नोट्स</th><th></th></thead><tbody>${rows || '<td><td colspan="6">कोई डाटा नहीं<th>'}</tbody></table></div><div class="mt-2"><button class="btn btn-success" onclick="shareRamcharitmanas()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printReport('members')"><i class="fas fa-print"></i> प्रिंट</button></div></div>`; 
     }
     
     function shareRamcharitmanas() { 
@@ -1847,7 +2012,7 @@
     
     function renderAuditReport() { 
         let logs = appData.auditLogs.slice(0, 100).map(l => `<tr><td style="color:var(--gray);">${new Date(l.timestamp).toLocaleDateString()} ${new Date(l.timestamp).toLocaleTimeString()}</td><td style="color:var(--saffron);">${l.user} (${l.role})<\/td><td style="color:var(--teal);">${l.action}<\/td><td style="color:var(--gray);">${l.details}<\/td><\/tr>`).join(''); 
-        let html = `<div class=\"card\"><div class=\"card-title\">📋 ऑडिट लॉग<\/div><div style=\"overflow-x:auto;\"><table class=\"data-table\"><thead><th>तिथि/समय</th><th>उपयोगकर्ता</th><th>कार्य</th><th>विवरण</th></thead><tbody>${logs || '<tr><td colspan="4">कोई लॉग नहीं<th>'}</tbody></table></div></div>`; 
+        let html = `<div class=\"card\"><div class=\"card-title\">📋 ऑडिट लॉग<\/div><div style=\"overflow-x:auto;\"><table class=\"data-table\"><thead><th>तिथि/समय</th><th>उपयोगकर्ता</th><th>कार्य</th><th>विवरण</th></thead><tbody>${logs || '<td><td colspan="4">कोई लॉग नहीं<th>'}</tbody><table></div></div>`; 
         document.getElementById('contentArea').innerHTML = html; 
     }
     
@@ -1886,7 +2051,7 @@
         let totalExpense = appData.expenses.reduce((s,e)=>s+e.amount,0);
         let html = `<div class="card"><div class="card-title">📊 लाभ/हानि रिपोर्ट</div>
         <div style="overflow-x:auto;"><table class="data-table"><thead><th>वर्ष</th><th>आय (₹)</th><th>व्यय (₹)</th><th>लाभ/हानि (₹)</th></thead><tbody>${rows}</tbody>
-        <tfoot><tr style="background:#f0f0f0; font-weight:bold;"><th>कुल</th><td style="color:var(--success);">₹${totalIncome}</td><td style="color:var(--danger);">₹${totalExpense}</td><td style="color:${totalIncome-totalExpense>=0?'var(--success)':'var(--danger)'};">₹${totalIncome-totalExpense}</td></tr></tfoot>
+        <tfoot><tr style="background:#f0f0f0; font-weight:bold;"><th>कुल</th><td style="color:var(--success);">₹${totalIncome}</td><td style="color:var(--danger);">₹${totalExpense}</td><td style="color:${totalIncome-totalExpense>=0?'var(--success)':'var(--danger)'};">₹${totalIncome-totalExpense}</td></table></tfoot>
         </table></div></div>`;
         document.getElementById('contentArea').innerHTML = html;
     }
@@ -2049,7 +2214,7 @@
         });
         html += `</div><div class="card"><div class="card-title">📝 डाटा शिकायत रिक्वेस्ट (${appData.dataChangeRequests.length})</div>`;
         appData.dataChangeRequests.forEach(req => {
-            html += `<div class="request-card"><div><strong>${req.requestedBy}</strong> (${req.requestedByRole})<br>${req.details || "डाटा गलत है"}<br><small>${new Date(req.createdAt).toLocaleString()}</small></div><div><button class="btn-sm btn-success" onclick="approveDataRequest(${req.id})">✅ स्वीकार</button><button class="btn-sm btn-danger" onclick="rejectDataRequest(${req.id})">❌ अस्वीकार</button></div></div>`;
+            html += `<div class="request-card"><div><strong>${req.requestedBy}</strong> (${req.requestedByRole})<br>${req.comment || req.details || "डाटा गलत है"}<br><small>${new Date(req.createdAt).toLocaleString()}</small></div><div><button class="btn-sm btn-success" onclick="approveDataRequest(${req.id})">✅ स्वीकार</button><button class="btn-sm btn-danger" onclick="rejectDataRequest(${req.id})">❌ अस्वीकार</button></div></div>`;
         });
         html += `</div>`;
         document.getElementById('contentArea').innerHTML = html;
@@ -2062,6 +2227,7 @@
             saveAllToFirebase();
             showToast(`✅ रिक्वेस्ट स्वीकृत`);
             updatePendingBadge();
+            showPushNotification("✅ रिक्वेस्ट स्वीकृत", `${req.requestedBy} की ${req.action} रिक्वेस्ट`);
             renderCurrentPage();
         }
     }
