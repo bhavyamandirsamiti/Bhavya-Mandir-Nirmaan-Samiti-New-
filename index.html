@@ -232,9 +232,9 @@
                 let totalExpense = appData.expenses.reduce((s,e)=>s+e.amount,0);
                 printContent = `<h2>📒 लेजर रिपोर्ट</h2><p>कुल आय: ₹${totalIncome}</p><p>कुल व्यय: ₹${totalExpense}</p><p>शेष: ₹${totalIncome - totalExpense}</p>`;
             } else if (type === 'pending') {
-                printContent = '<h2>⚠️ बकाया सूची</h2><table border="1" cellpadding="5" cellspacing="0" width="100%"><thead><tr><th>#</th><th>नाम</th><th>बकाया</th></td></thead><tbody>';
+                printContent = '<h2>⚠️ बकाया सूची</h2><table border="1" cellpadding="5" cellspacing="0" width="100%"><thead><tr><th>#</th><th>नाम</th><th>बकाया</th></tr></thead><tbody>';
                 appData.members.filter(m=>m.pending>0 && m.status==='active').forEach((m, i) => {
-                    printContent += `<tr><td style="color:#FF9933;">${i+1}<tr><td style="color:#333;">${m.name}</td><td style="color:#dc3545;">₹${m.pending}</td></tr>`;
+                    printContent += `<tr><td style="color:#FF9933;">${i+1}</td><td style="color:#333;">${m.name}</td><td style="color:#dc3545;">₹${m.pending}</td></tr>`;
                 });
                 printContent += '</tbody></table>';
             }
@@ -325,14 +325,15 @@
 </div>
 
 <script>
+    // ==================== NEW FIREBASE CONFIG ====================
     const firebaseConfig = {
-        apiKey: "AIzaSyDdgP1MNt2dhYLcOgQ-_79L39zJccEgy1U",
-        authDomain: "bhavya-samiti-aap.firebaseapp.com",
-        databaseURL: "https://bhavya-samiti-aap-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "bhavya-samiti-aap",
-        storageBucket: "bhavya-samiti-aap.firebasestorage.app",
-        messagingSenderId: "270600285961",
-        appId: "1:270600285961:web:5e940435d1d03ef6f8add8"
+        apiKey: "AIzaSyBICud2q7rygRs82aiVYHuECmJ3gA7r5BU",
+        authDomain: "bhavya-mandir-samiti.firebaseapp.com",
+        databaseURL: "https://bhavya-mandir-samiti-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "bhavya-mandir-samiti",
+        storageBucket: "bhavya-mandir-samiti.firebasestorage.app",
+        messagingSenderId: "966961147929",
+        appId: "1:966961147929:web:66a3c6b92af9149024ba88"
     };
     
     firebase.initializeApp(firebaseConfig);
@@ -341,33 +342,37 @@
     const auth = firebase.auth();
     
     let appData = {
-        settings: { committeeName: "🚩 भव्य मन्दिर निर्माण समिति 🚩", committeeSubtitle: "गुलाबपुरा (मोहनगढ़)", upiId: "asryadavtkg@ybl", defaultMonthly: 200, president: "रामेश्वर शर्मा", secretary: "सुरेश अग्रवाल", logo: "", whatsappGroupLink: "", telegramGroupLink: "", facebookLink: "", instagramLink: "", youtubeLink: "", presidentMobile: "9876543210", digitalSignature: "" },
+        settings: { committeeName: "🚩 भव्य मन्दिर निर्माण समिति 🚩", committeeSubtitle: "गुलाबपुरा (मोहनगढ़)", upiId: "asryadavtkg@ybl", defaultMonthly: 200, president: "रामेश्वर शर्मा", secretary: "सुरेश अग्रवाल", logo: "", whatsappGroupLink: "", telegramGroupLink: "", facebookLink: "", instagramLink: "", youtubeLink: "", presidentMobile: "9876543210", presidentSignature: "", secretarySignature: "" },
         members: [], donations: [], expenses: [], events: [], ramcharitmanas: [], gallery: [], auditLogs: [], users: [], committees: [], pendingEdits: [], receipts: [], construction: { percentage: 35, photos: [], expenses: [] }, pendingLogoRequests: [], pendingRequests: [], dataChangeRequests: [], loginHistory: [], announcements: [], meetings: []
     };
     let currentUser = null, currentMain = "home", currentSub = "dashboard", navigationStack = [], charts = { monthly: null, yearly: null, trend: null, expensePie: null, comparison: null };
     let dataLoaded = false;
     let pendingLoads = 18;
     
+    // Firebase Save Functions
+    function saveSettingsToFirebase() { database.ref('settings').set(appData.settings); }
+    function saveMembersToFirebase() { let obj = {}; appData.members.forEach(m => { obj[m.id] = m; }); database.ref('members').set(obj); }
+    function saveDonationsToFirebase() { let obj = {}; appData.donations.forEach(d => { obj[d.id] = d; }); database.ref('donations').set(obj); }
+    function saveExpensesToFirebase() { let obj = {}; appData.expenses.forEach(e => { obj[e.id] = e; }); database.ref('expenses').set(obj); }
+    function saveEventsToFirebase() { let obj = {}; appData.events.forEach(e => { obj[e.id] = e; }); database.ref('events').set(obj); }
+    function saveRamcharitToFirebase() { let obj = {}; appData.ramcharitmanas.forEach(r => { obj[r.id] = r; }); database.ref('ramcharitmanas').set(obj); }
+    function saveGalleryToFirebase() { let obj = {}; appData.gallery.forEach((g, idx) => { obj[idx] = g; }); database.ref('gallery').set(obj); }
+    function saveAuditToFirebase() { let obj = {}; appData.auditLogs.forEach((log, idx) => { obj[idx] = log; }); database.ref('auditLogs').set(obj); }
+    function saveUsersToFirebase() { let obj = {}; appData.users.forEach(u => { obj[u.id] = u; }); database.ref('users').set(obj); }
+    function saveCommitteesToFirebase() { let obj = {}; appData.committees.forEach(c => { obj[c.id] = c; }); database.ref('committees').set(obj); }
+    function savePendingEditsToFirebase() { let obj = {}; appData.pendingEdits.forEach(e => { obj[e.id] = e; }); database.ref('pendingEdits').set(obj); }
+    function saveReceiptsToFirebase() { let obj = {}; appData.receipts.forEach(r => { obj[r.id] = r; }); database.ref('receipts').set(obj); }
+    function saveConstructionToFirebase() { database.ref('construction').set(appData.construction); }
+    function saveLogoRequestsToFirebase() { let obj = {}; appData.pendingLogoRequests.forEach(r => { obj[r.id] = r; }); database.ref('pendingLogoRequests').set(obj); }
+    function savePendingRequestsToFirebase() { let obj = {}; appData.pendingRequests.forEach((r, idx) => { obj[idx] = r; }); database.ref('pendingRequests').set(obj); }
+    function saveDataChangeRequestsToFirebase() { let obj = {}; appData.dataChangeRequests.forEach((r, idx) => { obj[idx] = r; }); database.ref('dataChangeRequests').set(obj); }
+    function saveLoginHistoryToFirebase() { let obj = {}; appData.loginHistory.forEach((h, idx) => { obj[idx] = h; }); database.ref('loginHistory').set(obj); }
+    
     function saveAllToFirebase() {
-        database.ref('settings').set(appData.settings);
-        let m={}; appData.members.forEach(mem=>{ m[mem.id]=mem; }); database.ref('members').set(m);
-        let d={}; appData.donations.forEach(dn=>{ d[dn.id]=dn; }); database.ref('donations').set(d);
-        let e={}; appData.expenses.forEach(ex=>{ e[ex.id]=ex; }); database.ref('expenses').set(e);
-        let ev={}; appData.events.forEach(evt=>{ ev[evt.id]=evt; }); database.ref('events').set(ev);
-        let r={}; appData.ramcharitmanas.forEach(rc=>{ r[rc.id]=rc; }); database.ref('ramcharitmanas').set(r);
-        let g={}; appData.gallery.forEach((gal,i)=>{ g[i]=gal; }); database.ref('gallery').set(g);
-        let a={}; appData.auditLogs.forEach((lg,i)=>{ a[i]=lg; }); database.ref('auditLogs').set(a);
-        let u={}; appData.users.forEach(us=>{ u[us.id]=us; }); database.ref('users').set(u);
-        let com={}; appData.committees.forEach(c=>{ com[c.id]=c; }); database.ref('committees').set(com);
-        let pe={}; appData.pendingEdits.forEach(p=>{ pe[p.id]=p; }); database.ref('pendingEdits').set(pe);
-        let rec={}; appData.receipts.forEach(rc=>{ rec[rc.id]=rc; }); database.ref('receipts').set(rec);
-        database.ref('construction').set(appData.construction);
-        let plr={}; appData.pendingLogoRequests.forEach(pl=>{ plr[pl.id]=pl; }); database.ref('pendingLogoRequests').set(plr);
-        database.ref('loginHistory').set(appData.loginHistory);
-        database.ref('pendingRequests').set(appData.pendingRequests);
-        database.ref('dataChangeRequests').set(appData.dataChangeRequests);
-        database.ref('announcements').set(appData.announcements);
-        database.ref('meetings').set(appData.meetings);
+        saveSettingsToFirebase(); saveMembersToFirebase(); saveDonationsToFirebase(); saveExpensesToFirebase();
+        saveEventsToFirebase(); saveRamcharitToFirebase(); saveGalleryToFirebase(); saveAuditToFirebase();
+        saveUsersToFirebase(); saveCommitteesToFirebase(); savePendingEditsToFirebase(); saveReceiptsToFirebase();
+        saveConstructionToFirebase(); saveLogoRequestsToFirebase(); savePendingRequestsToFirebase(); saveDataChangeRequestsToFirebase(); saveLoginHistoryToFirebase();
     }
     
     function loadAllDataFromFirebase() {
@@ -409,7 +414,7 @@
                 { id: 3, name: "ऑपरेटर", email: "operator@mandir.com", password: "oper123", role: "operator", created_by: "एडमिन", created_at: new Date().toISOString() },
                 { id: 4, name: "व्यूअर", email: "viewer@mandir.com", password: "view123", role: "viewer", created_by: "एडमिन", created_at: new Date().toISOString() }
             ];
-            saveAllToFirebase();
+            saveUsersToFirebase();
         }
     }
     
@@ -589,6 +594,222 @@
     function switchMain(id) { pushToStack(currentMain, currentSub); currentMain = id; if(subTabsConfig[id] && subTabsConfig[id].length > 0) { currentSub = subTabsConfig[id][0].id; } else { currentSub = "dashboard"; } renderNavigation(); renderCurrentPage(); }
     function switchSub(id) { pushToStack(currentMain, currentSub); currentSub = id; renderNavigation(); renderCurrentPage(); }
     
+    // Helper: Get all months from join date till now or till a given year
+    function getAllMonthsTillNow(joinDate, upToYear = null) {
+        const join = new Date(joinDate);
+        const now = upToYear ? new Date(upToYear, 11, 31) : new Date();
+        const months = [];
+        const monthNames = ['जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अगस्त', 'सितम्बर', 'अक्टूबर', 'नवम्बर', 'दिसम्बर'];
+        for(let y = join.getFullYear(); y <= now.getFullYear(); y++) {
+            let sm = (y === join.getFullYear()) ? join.getMonth() : 0;
+            let em = (y === now.getFullYear()) ? now.getMonth() : 11;
+            for(let m = sm; m <= em; m++) {
+                months.push({ year: y, month: m, monthName: monthNames[m] });
+            }
+        }
+        return months;
+    }
+    
+    // ========== PAYMENT MODAL WITH CHECKBOXES (ORIGINAL STYLE) ==========
+    function openPaymentModal(memberId) {
+        let m = appData.members.find(x => x.id === memberId);
+        if(!m) { showToast("सदस्य नहीं मिला", true); return; }
+        
+        // Get all pending months
+        let allMonths = getAllMonthsTillNow(m.joinDate);
+        let paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly')
+            .map(d => ({ year: d.year, month: d.monthIndex }));
+        
+        let pendingMonths = [];
+        for(let mon of allMonths) {
+            let isPaid = paidMonths.some(p => p.year === mon.year && p.month === mon.month);
+            if(!isPaid) {
+                pendingMonths.push(mon);
+            }
+        }
+        
+        if(pendingMonths.length === 0) {
+            showToast("✅ इस सदस्य का कोई बकाया नहीं है", true);
+            return;
+        }
+        
+        // Group by year
+        let years = [...new Set(pendingMonths.map(m => m.year))].sort();
+        let currentYear = years[0];
+        let currentAmount = m.monthlyAmount;
+        
+        let html = `<div class="modal"><div class="modal-content" style="max-width:500px;">
+            <h3 style="color:var(--saffron); margin-bottom:15px;">💰 भुगतान - ${m.name}</h3>
+            <div class="year-selector"><label>📅 वर्ष: </label>
+            <select id="paymentYearSelect" class="form-control" style="width:auto; display:inline-block;">${years.map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
+            <div id="paymentMonthsContainer" class="checklist" style="max-height:250px; overflow-y:auto; margin:10px 0;"></div>
+            <div class="form-group"><label>💰 राशि (₹)</label><input type="number" id="paymentAmount" class="form-control" value="${currentAmount}" step="100"></div>
+            <div class="form-group"><label>💳 मोड</label><select id="paymentMode" class="form-control"><option>कैश</option><option>UPI</option><option>बैंक ट्रांसफर</option></select></div>
+            <div class="flex-between"><button class="btn btn-primary" onclick="processPayment(${memberId})">✅ भुगतान करें</button><button class="btn btn-secondary" onclick="closeModal()">❌ रद्द</button></div>
+        </div></div>`;
+        document.body.insertAdjacentHTML('beforeend', html);
+        
+        function renderMonths() {
+            let year = parseInt(document.getElementById('paymentYearSelect').value);
+            let monthsForYear = pendingMonths.filter(m => m.year === year);
+            let container = document.getElementById('paymentMonthsContainer');
+            if(!container) return;
+            let html2 = '<div class="checklist-item"><input type="checkbox" id="selectAllMonths"> <strong>✅ सभी चुनें</strong></div>';
+            for(let mon of monthsForYear) {
+                html2 += `<div class="checklist-item"><input type="checkbox" value="${mon.month}" class="month-cb" data-month="${mon.month}"> <label>${mon.monthName} ${mon.year}</label></div>`;
+            }
+            container.innerHTML = html2;
+            updateTotal();
+            document.getElementById('selectAllMonths').addEventListener('change', (e) => {
+                document.querySelectorAll('.month-cb').forEach(cb => cb.checked = e.target.checked);
+                updateTotal();
+            });
+            document.querySelectorAll('.month-cb').forEach(cb => cb.addEventListener('change', () => updateTotal()));
+        }
+        
+        function updateTotal() {
+            let selected = document.querySelectorAll('.month-cb:checked').length;
+            let amount = parseFloat(document.getElementById('paymentAmount').value) || m.monthlyAmount;
+            let total = selected * amount;
+            let totalSpan = document.getElementById('selectedTotal');
+            if(!totalSpan) {
+                totalSpan = document.createElement('div');
+                totalSpan.id = 'selectedTotal';
+                totalSpan.style.marginTop = '10px';
+                totalSpan.style.fontWeight = 'bold';
+                totalSpan.style.color = '#28a745';
+                document.getElementById('paymentMonthsContainer').parentNode.insertBefore(totalSpan, document.getElementById('paymentMonthsContainer').nextSibling);
+            }
+            totalSpan.innerHTML = `💰 कुल राशि: ₹${total}`;
+        }
+        
+        renderMonths();
+        document.getElementById('paymentYearSelect').addEventListener('change', renderMonths);
+        document.getElementById('paymentAmount').addEventListener('input', updateTotal);
+    }
+    
+    window.processPayment = function(memberId) {
+        let m = appData.members.find(x => x.id === memberId);
+        if(!m) return;
+        let year = parseInt(document.getElementById('paymentYearSelect').value);
+        let selectedMonths = Array.from(document.querySelectorAll('.month-cb:checked')).map(cb => parseInt(cb.value));
+        if(selectedMonths.length === 0) { showToast("⚠️ कोई महीना चुनें", true); return; }
+        let amount = parseFloat(document.getElementById('paymentAmount').value);
+        let mode = document.getElementById('paymentMode').value;
+        let paidMonthsList = [];
+        let totalAmount = 0;
+        let monthNames = ['जनवरी','फरवरी','मार्च','अप्रैल','मई','जून','जुलाई','अगस्त','सितम्बर','अक्टूबर','नवम्बर','दिसम्बर'];
+        for(let month of selectedMonths) {
+            let monthAmount = amount;
+            totalAmount += monthAmount;
+            let donation = {
+                id: Date.now(),
+                memberId: m.id,
+                memberName: m.name,
+                type: "monthly",
+                month: monthNames[month],
+                monthIndex: month,
+                year: year,
+                amount: monthAmount,
+                receiptNo: getNextReceiptNo(),
+                date: new Date().toISOString().slice(0,10),
+                mode: mode,
+                created_by: currentUser.name
+            };
+            appData.donations.push(donation);
+            paidMonthsList.push({ month: monthNames[month], year: year, amount: monthAmount });
+        }
+        computeAdvanceAndPending();
+        saveToLocal();
+        closeModal();
+        refreshDonationUI();
+        renderDashboard();
+        if(currentSub === 'memberList') renderMemberList();
+        if(currentSub === 'pending') renderPendingList();
+        generateReceipt(m, paidMonthsList, totalAmount, mode, "मासिक भुगतान");
+        showToast(`✅ ${selectedMonths.length} महीनों का भुगतान सफल`);
+        addAuditLog("PAYMENT", `${m.name} - ${selectedMonths.length} महीने`);
+    };
+    
+    function generateReceipt(member, paidMonthsList, totalAmount, mode, purpose) {
+        let logo = appData.settings.logo || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23FF9933' width='100' height='100'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E🛕%3C/text%3E%3C/svg%3E";
+        let monthsHtml = paidMonthsList && paidMonthsList.length > 0 ? paidMonthsList.map(p => `<li>${p.month} ${p.year} - ₹${p.amount}</li>`).join('') : '<li>एडवांस जमा</li>';
+        let receiptNo = getNextReceiptNo();
+        let upiUrl = `upi://pay?pa=${appData.settings.upiId}&pn=${encodeURIComponent(member.name)}&am=${member.pending || 0}&cu=INR`;
+        let presidentSignature = appData.settings.presidentSignature ? `<img src="${appData.settings.presidentSignature}" style="height:40px;">` : '<div>......................</div>';
+        let secretarySignature = appData.settings.secretarySignature ? `<img src="${appData.settings.secretarySignature}" style="height:40px;">` : '<div>......................</div>';
+        let win = window.open('', '_blank');
+        win.document.write(`<html><head><title>रसीद</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;padding:20px;background:#f0f0f0;}.receipt{max-width:700px;margin:auto;background:white;border:2px solid #FF9933;border-radius:15px;padding:20px;}.header{text-align:center;border-bottom:2px solid #FF9933;padding-bottom:15px;margin-bottom:15px;}.logo-img{width:60px;height:60px;border-radius:50%;}.member-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;}.amount{color:#28a745;font-size:20px;font-weight:bold;}.signature{margin-top:20px;display:flex;justify-content:space-between;margin-top:30px;}.footer{text-align:center;margin-top:20px;padding-top:15px;border-top:1px dashed #ddd;font-size:12px;}@media print{body{padding:0;background:white;}.receipt{border:none;padding:0;}button{display:none;}}</style></head><body><div class="receipt"><div class="header"><img src="${logo}" class="logo-img"><h2>${appData.settings.committeeName}</h2><p>${appData.settings.committeeSubtitle}</p><h3>दान रसीद</h3><strong>${receiptNo}</strong><p>${new Date().toLocaleDateString('hi-IN')}</p></div><div style="display:flex;align-items:center;gap:15px;justify-content:center;margin:10px 0;">${member.photo ? `<img src="${member.photo}" class="member-photo">` : `<div class="member-photo" style="background:#ddd;display:flex;align-items:center;justify-content:center;">👤</div>`}</div><p><strong>सदस्य:</strong> ${member.name}</p><p><strong>पिता:</strong> ${member.father || ''}</p><p><strong>मोबाइल:</strong> ${member.mobile}</p><p><strong>गाँव:</strong> ${member.village}</p><div><strong>${purpose}:</strong><ul>${monthsHtml}</ul></div><p><strong>राशि:</strong> <span class="amount">₹${totalAmount}</span></p><p><strong>मोड:</strong> ${mode}</p><p><strong>शेष बकाया:</strong> ₹${member.pending}</p><p><strong>एडवांस शेष:</strong> ₹${member.advanceBalance}</p><div style="text-align:center;margin:15px 0;"><div id="qrCodeReceipt"></div><p>UPI QR कोड स्कैन करें</p></div><div class="signature"><div>${presidentSignature}<br>${appData.settings.president}<br>(अध्यक्ष)</div><div>${secretarySignature}<br>${appData.settings.secretary}<br>(सचिव)</div></div><div class="footer"><p>🙏 जय श्री राम 🙏</p></div><div style="text-align:center;margin-top:15px;"><button onclick="window.print()" style="background:#FF9933;padding:8px 16px;border:none;border-radius:8px;">🖨️ प्रिंट करें</button> <button onclick="window.close()" style="background:#6c757d;padding:8px 16px;border:none;border-radius:8px;">बंद करें</button>
+        <div class="share-buttons"><a href="https://wa.me/91${member.mobile}?text=${encodeURIComponent(`🚩 रसीद: ${receiptNo}\nराशि: ₹${totalAmount}`)}" target="_blank" class="share-btn-icon"><i class="fab fa-whatsapp"></i> WhatsApp</a></div></div></div><script>new QRCode(document.getElementById("qrCodeReceipt"),{text:"${upiUrl}",width:150,height:150});<\/script></body></html>`);
+        win.document.close();
+        let waMsg = `🚩 जय श्री राम 🚩\n✅ रसीद: ${receiptNo}\nराशि: ₹${totalAmount}\nशेष बकाया: ₹${member.pending}\nएडवांस शेष: ₹${member.advanceBalance}\nUPI: ${appData.settings.upiId}\n\n🙏 धन्यवाद - ${appData.settings.committeeName}`;
+        window.open(`https://wa.me/91${member.mobile}?text=${encodeURIComponent(waMsg)}`, '_blank');
+        appData.receipts.unshift({ id: Date.now(), receiptNo, memberName: member.name, amount: totalAmount, type: purpose === "एडवांस जमा" ? 'advance' : 'monthly', date: new Date().toISOString(), memberPhoto: member.photo, memberMobile: member.mobile });
+        saveToLocal();
+        addAuditLog("रसीद_जनरेट", `${member.name} - ${receiptNo}`);
+        showToast(`✅ रसीद ${receiptNo} सेव हो गई और WhatsApp पर भेज दी गई`);
+    }
+    
+    // ========== RENDER DASHBOARD ==========
+    function renderDashboard() { 
+        computeAdvanceAndPending(); 
+        const totalMembers = appData.members.filter(m=>m.status==='active').length; 
+        const totalDonations = appData.donations.reduce((s,d)=>s+d.amount,0); 
+        const totalPending = appData.members.reduce((s,m)=>s+(m.pending||0),0); 
+        const totalAdvance = appData.members.reduce((s,m)=>s+(m.advanceBalance||0),0); 
+        const totalExpenses = appData.expenses.reduce((s,e)=>s+e.amount,0); 
+        const today = new Date().toISOString().slice(0,10); 
+        const todayCol = appData.donations.filter(d=>d.date===today).reduce((s,d)=>s+d.amount,0); 
+        const monthNow = new Date().getMonth(); 
+        const yearNow = new Date().getFullYear(); 
+        const monthlyCollection = appData.donations.filter(d => new Date(d.date).getMonth() === monthNow && new Date(d.date).getFullYear() === yearNow).reduce((s,d)=>s+d.amount,0); 
+        const monthsShort = ['जन', 'फर', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अग', 'सित', 'अक्टू', 'नव', 'दिस']; 
+        const monthlyIncome = monthsShort.map((_,idx) => appData.donations.filter(d=>new Date(d.date).getMonth()===idx && new Date(d.date).getFullYear()===yearNow).reduce((s,d)=>s+d.amount,0)); 
+        const monthlyExpense = monthsShort.map((_,idx) => appData.expenses.filter(e=>new Date(e.date).getMonth()===idx && new Date(e.date).getFullYear()===yearNow).reduce((s,e)=>s+e.amount,0));
+        
+        let years = [...new Set([...appData.donations.map(d=>new Date(d.date).getFullYear()), yearNow])].sort();
+        let yearlyIncome = years.map(y => appData.donations.filter(d=>new Date(d.date).getFullYear()===y).reduce((s,d)=>s+d.amount,0));
+        let yearlyExpense = years.map(y => appData.expenses.filter(e=>new Date(e.date).getFullYear()===y).reduce((s,e)=>s+e.amount,0));
+        
+        let donorMap = new Map();
+        appData.donations.forEach(d => { if(d.memberName) donorMap.set(d.memberName, (donorMap.get(d.memberName) || 0) + d.amount); });
+        let topDonors = Array.from(donorMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+        
+        let recentAnnouncements = (appData.announcements || []).slice(0,3).map(a => `<div class="announcement-card"><i class="fas fa-bullhorn"></i> <strong>${a.title}</strong><br><small>${new Date(a.date).toLocaleDateString()}</small><p>${a.content}</p></div>`).join('');
+        let upcomingMeetings = (appData.meetings || []).filter(m => new Date(m.date) >= new Date()).slice(0,3).map(m => `<div class="meeting-card"><i class="fas fa-calendar"></i> <strong>${m.title}</strong><br>📅 ${m.date}<br>📋 ${m.agenda}</div>`).join('');
+        
+        let html = `<div class="stats-grid">
+            <div class="stat-card" style="border-bottom-color:#FF9933;"><div class="stat-value" style="color:#FF9933;">${totalMembers}</div><div class="stat-label">कुल सदस्य</div></div>
+            <div class="stat-card" style="border-bottom-color:#28a745;"><div class="stat-value" style="color:#28a745;">₹${totalDonations}</div><div class="stat-label">कुल दान</div></div>
+            <div class="stat-card" style="border-bottom-color:#dc3545;"><div class="stat-value" style="color:#dc3545;">₹${totalPending}</div><div class="stat-label">कुल बकाया</div></div>
+            <div class="stat-card" style="border-bottom-color:#17a2b8;"><div class="stat-value" style="color:#17a2b8;">₹${totalAdvance}</div><div class="stat-label">कुल एडवांस</div></div>
+            <div class="stat-card" style="border-bottom-color:#20c997;"><div class="stat-value" style="color:#20c997;">₹${monthlyCollection}</div><div class="stat-label">मासिक संग्रह</div></div>
+            <div class="stat-card" style="border-bottom-color:#fd7e14;"><div class="stat-value" style="color:#fd7e14;">₹${todayCol}</div><div class="stat-label">आज संग्रह</div></div>
+            <div class="stat-card" style="border-bottom-color:#6f42c1;"><div class="stat-value" style="color:#6f42c1;">₹${totalExpenses}</div><div class="stat-label">व्यय</div></div>
+            <div class="stat-card" style="border-bottom-color:#20c997;"><div class="stat-value" style="color:#20c997;">₹${totalDonations - totalExpenses}</div><div class="stat-label">शेष राशि</div></div>
+        </div>
+        <div class="card"><div class="card-title">🏆 टॉप 5 दानदाता</div>${topDonors.map(([name, amt], i)=>`<div class="top-donor-item"><span class="top-donor-rank">${i+1}</span><strong>${name}</strong><span>₹${amt}</span></div>`).join('')}</div>
+        <div class="card"><div class="card-title">📈 मासिक आय vs व्यय (₹ में) - ${yearNow}</div><canvas id="monthlyChartCanvas" style="height:200px"></canvas></div>
+        <div class="card"><div class="card-title">📊 वार्षिक ट्रेंड (आय vs व्यय)</div><canvas id="yearlyTrendCanvas" style="height:200px"></canvas></div>
+        <div class="card"><div class="card-title">📢 ताज़ा घोषणाएँ</div>${recentAnnouncements || '<p>कोई घोषणा नहीं</p>'}<button class="btn-sm btn-primary" onclick="switchSub('announcements')">सभी देखें</button></div>
+        <div class="card"><div class="card-title">📅 आगामी बैठकें</div>${upcomingMeetings || '<p>कोई बैठक नहीं</p>'}<button class="btn-sm btn-primary" onclick="switchSub('meetings')">सभी देखें</button></div>
+        <div class="card"><div class="card-title">⚠️ बकाया अलर्ट</div><div id="pendingAlertList"></div></div>
+        <div class="card"><div class="card-title">📨 बल्क WhatsApp (20 सेकंड का अंतराल)</div>${canSendBulkMessage() ? `<button class="btn btn-success" onclick="startBulkMessage()"><i class="fab fa-whatsapp"></i> सभी को भेजें</button><button class="btn btn-danger" onclick="stopBulkMessage()">रोकें</button>` : '<p class="text-muted">बल्क मैसेज केवल एडमिन</p>'}</div>
+        <div class="card"><div class="card-title">📤 एक्सपोर्ट रिपोर्ट</div><div class="flex-between"><button class="btn btn-success" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> एक्सेल</button><button class="btn btn-secondary" onclick="printReport('members')"><i class="fas fa-print"></i> प्रिंट</button><button class="btn btn-info" onclick="backupToGoogleDrive()"><i class="fab fa-google-drive"></i> बैकअप</button></div></div>
+        <div class="card"><div class="card-title">📱 ऐप शेयर करें</div><button class="btn btn-primary" onclick="shareApp()"><i class="fas fa-share-alt"></i> ऐप शेयर करें</button>
+        <div class="install-guide"><i class="fas fa-info-circle"></i> <strong>ऐप इंस्टॉल करें:</strong> क्रोम मेनू → "ऐप इंस्टॉल करें"</div></div>`; 
+        document.getElementById('contentArea').innerHTML = html; 
+        
+        const ctx = document.getElementById('monthlyChartCanvas')?.getContext('2d'); 
+        if(ctx) { if(charts.monthly) charts.monthly.destroy(); charts.monthly = new Chart(ctx, { type:'bar', data:{ labels:monthsShort, datasets:[{ label:'आय (₹)', data:monthlyIncome, backgroundColor:'#28a745' }, { label:'व्यय (₹)', data:monthlyExpense, backgroundColor:'#dc3545' }] }, options: { responsive: true } }); } 
+        
+        const ctxTrend = document.getElementById('yearlyTrendCanvas')?.getContext('2d');
+        if(ctxTrend) { if(charts.trend) charts.trend.destroy(); charts.trend = new Chart(ctxTrend, { type:'line', data:{ labels:years.map(y=>y.toString()), datasets:[{ label:'आय (₹)', data:yearlyIncome, borderColor:'#28a745', fill:false }, { label:'व्यय (₹)', data:yearlyExpense, borderColor:'#dc3545', fill:false }] }, options: { responsive: true } }); }
+        
+        const pendingMems = appData.members.filter(m=>m.pending>0).slice(0,5); 
+        document.getElementById('pendingAlertList').innerHTML = pendingMems.map(m=>`<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div>`).join(''); 
+    }
+    
     function generateDetailedReminderMessage(m) { 
         const allMonths = getAllMonthsFromJoinTillNow(m.joinDate); 
         let monthStatus = ''; 
@@ -636,83 +857,6 @@
     
     function stopBulkMessage() { if(bulkInterval) { clearInterval(bulkInterval); bulkInterval = null; showToast("⏹️ बल्क मैसेज रोक दिया गया"); } }
     
-    function generateReceipt(member, paidMonthsList, totalAmount, mode, purpose) {
-        let logo = appData.settings.logo || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23FF9933' width='100' height='100'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E🛕%3C/text%3E%3C/svg%3E";
-        let monthsHtml = paidMonthsList && paidMonthsList.length > 0 ? paidMonthsList.map(p => `<li>${p.month} ${p.year} - ₹${p.amount}</li>`).join('') : '<li>एडवांस जमा</li>';
-        let receiptNo = getNextReceiptNo();
-        let upiUrl = `upi://pay?pa=${appData.settings.upiId}&pn=${encodeURIComponent(member.name)}&am=${member.pending || 0}&cu=INR`;
-        let signature = appData.settings.digitalSignature ? `<img src="${appData.settings.digitalSignature}" style="height:40px;">` : '<div>......................</div>';
-        let win = window.open('', '_blank');
-        win.document.write(`<html><head><title>रसीद</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;padding:20px;background:#f0f0f0;}.receipt{max-width:700px;margin:auto;background:white;border:2px solid #FF9933;border-radius:15px;padding:20px;}.header{text-align:center;border-bottom:2px solid #FF9933;padding-bottom:15px;margin-bottom:15px;}.logo-img{width:60px;height:60px;border-radius:50%;}.member-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;}.amount{color:#28a745;font-size:20px;font-weight:bold;}.signature{margin-top:20px;display:flex;justify-content:space-between;margin-top:30px;}.footer{text-align:center;margin-top:20px;padding-top:15px;border-top:1px dashed #ddd;font-size:12px;}@media print{body{padding:0;background:white;}.receipt{border:none;padding:0;}button{display:none;}}</style></head><body><div class="receipt"><div class="header"><img src="${logo}" class="logo-img"><h2>${appData.settings.committeeName}</h2><p>${appData.settings.committeeSubtitle}</p><h3>दान रसीद</h3><strong>${receiptNo}</strong><p>${new Date().toLocaleDateString('hi-IN')}</p></div><div style="display:flex;align-items:center;gap:15px;justify-content:center;margin:10px 0;">${member.photo ? `<img src="${member.photo}" class="member-photo">` : `<div class="member-photo" style="background:#ddd;display:flex;align-items:center;justify-content:center;">👤</div>`}</div><p><strong>सदस्य:</strong> ${member.name}</p><p><strong>पिता:</strong> ${member.father || ''}</p><p><strong>मोबाइल:</strong> ${member.mobile}</p><p><strong>गाँव:</strong> ${member.village}</p><div><strong>${purpose}:</strong><ul>${monthsHtml}</ul></div><p><strong>राशि:</strong> <span class="amount">₹${totalAmount}</span></p><p><strong>मोड:</strong> ${mode}</p><p><strong>शेष बकाया:</strong> ₹${member.pending}</p><p><strong>एडवांस शेष:</strong> ₹${member.advanceBalance}</p><div style="text-align:center;margin:15px 0;"><div id="qrCodeReceipt"></div><p>UPI QR कोड स्कैन करें</p></div><div class="signature"><div>${signature}<br>${appData.settings.president}<br>(अध्यक्ष)</div><div>......................<br>${appData.settings.secretary}<br>(सचिव)</div></div><div class="footer"><p>🙏 जय श्री राम 🙏</p></div><div style="text-align:center;margin-top:15px;"><button onclick="window.print()" style="background:#FF9933;padding:8px 16px;border:none;border-radius:8px;">🖨️ प्रिंट करें</button> <button onclick="window.close()" style="background:#6c757d;padding:8px 16px;border:none;border-radius:8px;">बंद करें</button>
-        <div class="share-buttons"><a href="https://wa.me/91${member.mobile}?text=${encodeURIComponent(`🚩 रसीद: ${receiptNo}\nराशि: ₹${totalAmount}`)}" target="_blank" class="share-btn-icon"><i class="fab fa-whatsapp"></i> WhatsApp</a></div></div></div><script>new QRCode(document.getElementById("qrCodeReceipt"),{text:"${upiUrl}",width:150,height:150});<\/script></body></html>`);
-        win.document.close();
-        let waMsg = `🚩 जय श्री राम 🚩\n✅ रसीद: ${receiptNo}\nराशि: ₹${totalAmount}\nशेष बकाया: ₹${member.pending}\nएडवांस शेष: ₹${member.advanceBalance}\nUPI: ${appData.settings.upiId}\n\n🙏 धन्यवाद - ${appData.settings.committeeName}`;
-        window.open(`https://wa.me/91${member.mobile}?text=${encodeURIComponent(waMsg)}`, '_blank');
-        appData.receipts.unshift({ id: Date.now(), receiptNo, memberName: member.name, amount: totalAmount, type: purpose === "एडवांस जमा" ? 'advance' : 'monthly', date: new Date().toISOString(), memberPhoto: member.photo, memberMobile: member.mobile });
-        saveToLocal();
-        addAuditLog("रसीद_जनरेट", `${member.name} - ${receiptNo}`);
-        showToast(`✅ रसीद ${receiptNo} सेव हो गई और WhatsApp पर भेज दी गई`);
-    }
-    
-    function renderDashboard() { 
-        computeAdvanceAndPending(); 
-        const totalMembers = appData.members.filter(m=>m.status==='active').length; 
-        const totalDonations = appData.donations.reduce((s,d)=>s+d.amount,0); 
-        const totalPending = appData.members.reduce((s,m)=>s+(m.pending||0),0); 
-        const totalAdvance = appData.members.reduce((s,m)=>s+(m.advanceBalance||0),0); 
-        const totalExpenses = appData.expenses.reduce((s,e)=>s+e.amount,0); 
-        const today = new Date().toISOString().slice(0,10); 
-        const todayCol = appData.donations.filter(d=>d.date===today).reduce((s,d)=>s+d.amount,0); 
-        const monthNow = new Date().getMonth(); 
-        const yearNow = new Date().getFullYear(); 
-        const monthlyCollection = appData.donations.filter(d => new Date(d.date).getMonth() === monthNow && new Date(d.date).getFullYear() === yearNow).reduce((s,d)=>s+d.amount,0); 
-        const monthsShort = ['जन', 'फर', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अग', 'सित', 'अक्टू', 'नव', 'दिस']; 
-        const monthlyIncome = monthsShort.map((_,idx) => appData.donations.filter(d=>new Date(d.date).getMonth()===idx && new Date(d.date).getFullYear()===yearNow).reduce((s,d)=>s+d.amount,0)); 
-        const monthlyExpense = monthsShort.map((_,idx) => appData.expenses.filter(e=>new Date(e.date).getMonth()===idx && new Date(e.date).getFullYear()===yearNow).reduce((s,e)=>s+e.amount,0));
-        
-        let years = [...new Set([...appData.donations.map(d=>new Date(d.date).getFullYear()), yearNow])].sort();
-        let yearlyIncome = years.map(y => appData.donations.filter(d=>new Date(d.date).getFullYear()===y).reduce((s,d)=>s+d.amount,0));
-        let yearlyExpense = years.map(y => appData.expenses.filter(e=>new Date(e.date).getFullYear()===y).reduce((s,e)=>s+e.amount,0));
-        
-        let donorMap = new Map();
-        appData.donations.forEach(d => { if(d.memberName) donorMap.set(d.memberName, (donorMap.get(d.memberName) || 0) + d.amount); });
-        let topDonors = Array.from(donorMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        
-        let recentAnnouncements = appData.announcements.slice(0,3).map(a => `<div class="announcement-card"><i class="fas fa-bullhorn"></i> <strong>${a.title}</strong><br><small>${new Date(a.date).toLocaleDateString()}</small><p>${a.content}</p></div>`).join('');
-        let upcomingMeetings = appData.meetings.filter(m => new Date(m.date) >= new Date()).slice(0,3).map(m => `<div class="meeting-card"><i class="fas fa-calendar"></i> <strong>${m.title}</strong><br>📅 ${m.date}<br>📋 ${m.agenda}</div>`).join('');
-        
-        let html = `<div class="stats-grid">
-            <div class="stat-card" style="border-bottom-color:#FF9933;"><div class="stat-value" style="color:#FF9933;">${totalMembers}</div><div class="stat-label">कुल सदस्य</div></div>
-            <div class="stat-card" style="border-bottom-color:#28a745;"><div class="stat-value" style="color:#28a745;">₹${totalDonations}</div><div class="stat-label">कुल दान</div></div>
-            <div class="stat-card" style="border-bottom-color:#dc3545;"><div class="stat-value" style="color:#dc3545;">₹${totalPending}</div><div class="stat-label">कुल बकाया</div></div>
-            <div class="stat-card" style="border-bottom-color:#17a2b8;"><div class="stat-value" style="color:#17a2b8;">₹${totalAdvance}</div><div class="stat-label">कुल एडवांस</div></div>
-            <div class="stat-card" style="border-bottom-color:#20c997;"><div class="stat-value" style="color:#20c997;">₹${monthlyCollection}</div><div class="stat-label">मासिक संग्रह</div></div>
-            <div class="stat-card" style="border-bottom-color:#fd7e14;"><div class="stat-value" style="color:#fd7e14;">₹${todayCol}</div><div class="stat-label">आज संग्रह</div></div>
-            <div class="stat-card" style="border-bottom-color:#6f42c1;"><div class="stat-value" style="color:#6f42c1;">₹${totalExpenses}</div><div class="stat-label">व्यय</div></div>
-            <div class="stat-card" style="border-bottom-color:#20c997;"><div class="stat-value" style="color:#20c997;">₹${totalDonations - totalExpenses}</div><div class="stat-label">शेष राशि</div></div>
-        </div>
-        <div class="card"><div class="card-title">🏆 टॉप 5 दानदाता</div>${topDonors.map(([name, amt], i)=>`<div class="top-donor-item"><span class="top-donor-rank">${i+1}</span><strong>${name}</strong><span>₹${amt}</span></div>`).join('')}</div>
-        <div class="card"><div class="card-title">📈 मासिक आय vs व्यय (₹ में) - ${yearNow}</div><canvas id="monthlyChartCanvas" style="height:200px"></canvas></div>
-        <div class="card"><div class="card-title">📊 वार्षिक ट्रेंड (आय vs व्यय)</div><canvas id="yearlyTrendCanvas" style="height:200px"></canvas></div>
-        <div class="card"><div class="card-title">📢 ताज़ा घोषणाएँ</div>${recentAnnouncements || '<p>कोई घोषणा नहीं</p>'}<button class="btn-sm btn-primary" onclick="switchSub('announcements')">सभी देखें</button></div>
-        <div class="card"><div class="card-title">📅 आगामी बैठकें</div>${upcomingMeetings || '<p>कोई बैठक नहीं</p>'}<button class="btn-sm btn-primary" onclick="switchSub('meetings')">सभी देखें</button></div>
-        <div class="card"><div class="card-title">⚠️ बकाया अलर्ट</div><div id="pendingAlertList"></div></div>
-        <div class="card"><div class="card-title">📨 बल्क WhatsApp (20 सेकंड का अंतराल)</div>${canSendBulkMessage() ? `<button class="btn btn-success" onclick="startBulkMessage()"><i class="fab fa-whatsapp"></i> सभी को भेजें</button><button class="btn btn-danger" onclick="stopBulkMessage()">रोकें</button>` : '<p class="text-muted">बल्क मैसेज केवल एडमिन</p>'}</div>
-        <div class="card"><div class="card-title">📤 एक्सपोर्ट रिपोर्ट</div><div class="flex-between"><button class="btn btn-success" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> एक्सेल</button><button class="btn btn-secondary" onclick="printReport('members')"><i class="fas fa-print"></i> प्रिंट</button><button class="btn btn-info" onclick="backupToGoogleDrive()"><i class="fab fa-google-drive"></i> बैकअप</button></div></div>
-        <div class="card"><div class="card-title">📱 ऐप शेयर करें</div><button class="btn btn-primary" onclick="shareApp()"><i class="fas fa-share-alt"></i> ऐप शेयर करें</button>
-        <div class="install-guide"><i class="fas fa-info-circle"></i> <strong>ऐप इंस्टॉल करें:</strong> क्रोम मेनू → "ऐप इंस्टॉल करें"</div></div>`; 
-        document.getElementById('contentArea').innerHTML = html; 
-        
-        const ctx = document.getElementById('monthlyChartCanvas')?.getContext('2d'); 
-        if(ctx) { if(charts.monthly) charts.monthly.destroy(); charts.monthly = new Chart(ctx, { type:'bar', data:{ labels:monthsShort, datasets:[{ label:'आय (₹)', data:monthlyIncome, backgroundColor:'#28a745' }, { label:'व्यय (₹)', data:monthlyExpense, backgroundColor:'#dc3545' }] }, options: { responsive: true } }); } 
-        
-        const ctxTrend = document.getElementById('yearlyTrendCanvas')?.getContext('2d');
-        if(ctxTrend) { if(charts.trend) charts.trend.destroy(); charts.trend = new Chart(ctxTrend, { type:'line', data:{ labels:years.map(y=>y.toString()), datasets:[{ label:'आय (₹)', data:yearlyIncome, borderColor:'#28a745', fill:false }, { label:'व्यय (₹)', data:yearlyExpense, borderColor:'#dc3545', fill:false }] }, options: { responsive: true } }); }
-        
-        const pendingMems = appData.members.filter(m=>m.pending>0).slice(0,5); 
-        document.getElementById('pendingAlertList').innerHTML = pendingMems.map(m=>`<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div>`).join(''); 
-    }
-    
     function sendReminder(id) { 
         if(!canSendReminder()) { showToast("⚠️ आप रिमाइंडर नहीं भेज सकते", true); return; } 
         let m = appData.members.find(x=>x.id===id); 
@@ -724,6 +868,7 @@
         } 
     }
     
+    // ========== RENDER FUNCTIONS (Keeping original structure) ==========
     function renderProfile() { 
         document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">👤 मेरी प्रोफाइल</div><p><strong>नाम:</strong> ${currentUser.name}</p><p><strong>ईमेल:</strong> ${currentUser.email}</p><p><strong>रोल:</strong> ${currentUser.role === 'super_admin' ? 'सुपर एडमिन' : (currentUser.role === 'admin' ? 'एडमिन' : (currentUser.role === 'operator' ? 'ऑपरेटर' : 'व्यूअर'))}</p>${canEdit() ? '<button class="btn btn-primary" onclick="changePassword()">🔑 पासवर्ड बदलें</button>' : ''}</div>`; 
     }
@@ -816,7 +961,7 @@
     function renderMemberList() { 
         computeAdvanceAndPending(); 
         selectedMembers = [];
-        let membersHtml = appData.members.map(m => `<div class="member-card"><div class="member-info-flex"><div>${m.photo ? `<img src="${m.photo}" class="photo-preview">` : `<div class="photo-preview" style="background:#ddd; display:flex; align-items:center; justify-content:center;">👤</div>`}<div><strong>${m.name}</strong> ${m.status !== 'active' ? '<span class="badge-inactive">निष्क्रिय</span>' : ''}<br><span style="font-size:11px;">${m.village}</span> | ₹${m.monthlyAmount}/माह<br>बकाया: <span class="badge-pending">₹${m.pending||0}</span> | एडवांस: <span class="badge-advance">₹${m.advanceBalance||0}</span></div></div><div>${canEdit() ? `<button class="btn-sm btn-primary" onclick="editMember(${m.id})">✏️</button>` : ''}<button class="btn-sm btn-secondary" onclick="toggleMemberStatus(${m.id})"><i class="fas ${m.status === 'active' ? 'fa-ban' : 'fa-check'}"></i></button><button class="btn-sm btn-success" onclick="openDonationForMember(${m.id})">💰</button><button class="btn-sm btn-info" onclick="openAdvanceModal(${m.id})">⭐</button><button class="btn-sm btn-secondary" onclick="showQRCode(${m.id})"><i class="fas fa-qrcode"></i></button><button class="btn-sm btn-warning" onclick="showMemberPaymentHistory(${m.id})">📜</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}${canDelete() ? `<button class="btn-sm btn-danger" onclick="deleteMember(${m.id})">🗑️</button>` : ''}<input type="checkbox" class="member-select" value="${m.id}" onchange="toggleMemberSelect(${m.id})" style="margin-left:8px; width:18px; height:18px;"></div></div>`).join(''); 
+        let membersHtml = appData.members.map(m => `<div class="member-card"><div class="member-info-flex"><div>${m.photo ? `<img src="${m.photo}" class="photo-preview">` : `<div class="photo-preview" style="background:#ddd; display:flex; align-items:center; justify-content:center;">👤</div>`}<div><strong>${m.name}</strong> ${m.status !== 'active' ? '<span class="badge-inactive">निष्क्रिय</span>' : ''}<br><span style="font-size:11px;">${m.village}</span> | ₹${m.monthlyAmount}/माह<br>बकाया: <span class="badge-pending">₹${m.pending||0}</span> | एडवांस: <span class="badge-advance">₹${m.advanceBalance||0}</span></div></div><div>${canEdit() ? `<button class="btn-sm btn-primary" onclick="editMember(${m.id})">✏️</button>` : ''}<button class="btn-sm btn-secondary" onclick="toggleMemberStatus(${m.id})"><i class="fas ${m.status === 'active' ? 'fa-ban' : 'fa-check'}"></i></button><button class="btn-sm btn-success" onclick="openPaymentModal(${m.id})">💰</button><button class="btn-sm btn-info" onclick="openAdvanceModal(${m.id})">⭐</button><button class="btn-sm btn-secondary" onclick="showQRCode(${m.id})"><i class="fas fa-qrcode"></i></button><button class="btn-sm btn-warning" onclick="showMemberPaymentHistory(${m.id})">📜</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}${canDelete() ? `<button class="btn-sm btn-danger" onclick="deleteMember(${m.id})">🗑️</button>` : ''}<input type="checkbox" class="member-select" value="${m.id}" onchange="toggleMemberSelect(${m.id})" style="margin-left:8px; width:18px; height:18px;"></div></div>`).join(''); 
         document.getElementById('contentArea').innerHTML = `<div class="flex-between"><h2>👥 सदस्य सूची</h2>${canEdit() ? '<div><button class="btn btn-primary" onclick="switchSub(\'addMember\')">+</button><button class="btn btn-danger bulk-delete-btn" id="bulkDeleteBtn" style="display:none;" onclick="bulkDeleteMembers()"><i class="fas fa-trash"></i> हटाएं</button></div>' : ''}</div>
         <div class="advance-search"><input type="text" id="searchAny" placeholder="🔍 नाम / मोबाइल / गाँव से खोजें" class="form-control" onkeyup="filterMembers()"></div>
         <div id="memberListContainer">${membersHtml}</div>
@@ -833,7 +978,7 @@
                    (m.mobile || '').includes(searchTerm) ||
                    (m.village || '').toLowerCase().includes(searchTerm);
         });
-        let container = filtered.map(m => `<div class="member-card"><div><div><strong>${m.name}</strong> ${m.status !== 'active' ? '<span class="badge-inactive">निष्क्रिय</span>' : ''}<br>${m.village} | बकाया: ₹${m.pending||0}</div></div><div><button class="btn-sm btn-success" onclick="openDonationForMember(${m.id})">💰</button><button class="btn-sm btn-info" onclick="showQRCode(${m.id})"><i class="fas fa-qrcode"></i></button><button class="btn-sm btn-warning" onclick="showMemberPaymentHistory(${m.id})">📜</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}<input type="checkbox" class="member-select" value="${m.id}" onchange="toggleMemberSelect(${m.id})" style="margin-left:8px; width:18px; height:18px;"></div></div>`).join('');
+        let container = filtered.map(m => `<div class="member-card"><div><div><strong>${m.name}</strong> ${m.status !== 'active' ? '<span class="badge-inactive">निष्क्रिय</span>' : ''}<br>${m.village} | बकाया: ₹${m.pending||0}</div></div><div><button class="btn-sm btn-success" onclick="openPaymentModal(${m.id})">💰</button><button class="btn-sm btn-info" onclick="showQRCode(${m.id})"><i class="fas fa-qrcode"></i></button><button class="btn-sm btn-warning" onclick="showMemberPaymentHistory(${m.id})">📜</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}<input type="checkbox" class="member-select" value="${m.id}" onchange="toggleMemberSelect(${m.id})" style="margin-left:8px; width:18px; height:18px;"></div></div>`).join('');
         document.getElementById('memberListContainer').innerHTML = container || '<div>कोई सदस्य नहीं</div>';
     }
     
@@ -888,7 +1033,7 @@
         let html = `<div class="modal"><div class="modal-content"><h3>📜 ${m.name} का भुगतान इतिहास</h3><p><strong>कुल दान:</strong> ₹${total}</p><div class="payment-history"><div style="overflow-x:auto;"><table class="data-table"><thead><th>तिथि</th><th>राशि</th><th>मोड</th><th>रसीद नं.</th></thead><tbody>`;
         if(payments.length === 0) html += `<tr><td colspan="4">कोई भुगतान नहीं</td></tr>`;
         else payments.reverse().forEach(p => { html += `<tr><td style="color:var(--saffron);">${new Date(p.date).toLocaleDateString('hi-IN')}</td><td style="color:var(--success);">₹${p.amount}</td><td style="color:var(--gray);">${p.mode || 'कैश'}</td><td style="color:var(--gray);">${p.receiptNo || '-'}</td></tr>`; });
-        html += `</tbody></table></div><button class="btn btn-primary mt-2" onclick="printMemberPaymentHistory(${id})"><i class="fas fa-print"></i> प्रिंट करें</button><button class="btn btn-secondary mt-2" onclick="closeModal()">बंद करें</button></div></div>`;
+        html += `</tbody></td></div><button class="btn btn-primary mt-2" onclick="printMemberPaymentHistory(${id})"><i class="fas fa-print"></i> प्रिंट करें</button><button class="btn btn-secondary mt-2" onclick="closeModal()">बंद करें</button></div></div>`;
         document.body.insertAdjacentHTML('beforeend', html);
     }
     
@@ -899,7 +1044,7 @@
         let rows = '';
         payments.forEach(p => { rows += `<tr><td style="color:var(--saffron);">${new Date(p.date).toLocaleDateString('hi-IN')}</td><td style="color:var(--success);">₹${p.amount}</td><td style="color:var(--gray);">${p.mode || 'कैश'}</td><td style="color:var(--gray);">${p.receiptNo || '-'}</td></tr>`; });
         let win = window.open('', '_blank');
-        win.document.write(`<html><head><title>${m.name} का भुगतान इतिहास</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>${m.name} का भुगतान इतिहास</h2><table class="data-table"><thead><th>तिथि</th><th>राशि</th><th>मोड</th><th>रसीद नं.</th></thead><tbody>${rows}</tbody><tfoot><tr style="background:#f0f0f0;"><th>कुल योग</th><th colspan="3">₹${total}</th></tr></tfoot><table><p>दिनांक: ${new Date().toLocaleDateString('hi-IN')}</p><p>${appData.settings.president} (अध्यक्ष)</p><button onclick="window.print()">🖨️ प्रिंट करें</button> <button onclick="window.close()">बंद करें</button></body></html>`);
+        win.document.write(`<html><head><title>${m.name} का भुगतान इतिहास</title><style>body{font-family:Arial;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:8px} th{background:#FF9933;color:white}</style></head><body><h2>${m.name} का भुगतान इतिहास</h2><table class="data-table"><thead><th>तिथि</th><th>राशि</th><th>मोड</th><th>रसीद नं.</th></thead><tbody>${rows}</tbody><tfoot><tr style="background:#f0f0f0;"><th>कुल योग</th><th colspan="3">₹${total}</th></tr></tfoot></table><p>दिनांक: ${new Date().toLocaleDateString('hi-IN')}</p><p>${appData.settings.president} (अध्यक्ष)</p><button onclick="window.print()">🖨️ प्रिंट करें</button> <button onclick="window.close()">बंद करें</button></body></html>`);
         win.document.close();
     }
     
@@ -1242,43 +1387,23 @@
         let m = appData.members.find(x=>x.id===memberId); 
         if(!m) return []; 
         const allMonths = getAllMonthsFromJoinTillNow(m.joinDate); 
-        const paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly').map(d => ({ year: d.year, month: d.month })); 
+        const paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly').map(d => ({ year: d.year, monthIndex: d.monthIndex })); 
         let pending = []; 
         for(let item of allMonths) { 
             if(selectedYear && item.year !== selectedYear) continue; 
-            if(!paidMonths.some(p => p.year === item.year && p.month === item.month)) pending.push(item); 
+            if(!paidMonths.some(p => p.year === item.year && p.monthIndex === item.monthIndex)) pending.push(item); 
         } 
         return pending; 
-    }
-    
-    function openPaymentModal(memberId) {
-        let m = appData.members.find(x=>x.id===memberId);
-        if(!m) return;
-        let amount = prompt(`₹ राशि दर्ज करें (${m.name})`);
-        if(amount && !isNaN(amount) && parseFloat(amount) > 0) {
-            let donation = { id: Date.now(), memberId, memberName: m.name, type: "monthly", amount: parseFloat(amount), receiptNo: getNextReceiptNo(), date: new Date().toISOString().slice(0,10), mode: "cash", created_by: currentUser.name };
-            appData.donations.push(donation);
-            computeAdvanceAndPending();
-            saveToLocal();
-            let currentMonth = new Date().toLocaleString('default', { month: 'long' });
-            let currentYear = new Date().getFullYear();
-            generateReceipt(m, [{ month: currentMonth, year: currentYear, amount: parseFloat(amount) }], parseFloat(amount), "cash", "मासिक भुगतान");
-            showToast(`✅ ₹${amount} का भुगतान सफल`);
-            addAuditLog("PAYMENT", `${m.name} - ₹${amount}`);
-            renderCurrentPage();
-        } else {
-            showToast("⚠️ सही राशि डालें", true);
-        }
     }
     
     function openMultiYearPaymentModal(memberId) { 
         let m = appData.members.find(x=>x.id===memberId); 
         let allMonths = getAllMonthsFromJoinTillNow(m.joinDate); 
-        let paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly').map(d => ({ year: d.year, month: d.month })); 
+        let paidMonths = appData.donations.filter(d => d.memberId === m.id && d.type === 'monthly').map(d => ({ year: d.year, monthIndex: d.monthIndex })); 
         let pendingItems = []; 
         for(let item of allMonths) { 
-            if(!paidMonths.some(p => p.year === item.year && p.month === item.month)) { 
-                pendingItems.push({ year: item.year, month: item.month }); 
+            if(!paidMonths.some(p => p.year === item.year && p.monthIndex === item.monthIndex)) { 
+                pendingItems.push({ year: item.year, monthIndex: item.monthIndex, monthName: item.month }); 
             } 
         } 
         if(pendingItems.length === 0) { showToast("⚠️ कोई बकाया नहीं है", true); return; } 
@@ -1286,9 +1411,9 @@
         if(confirm(`कुल ${pendingItems.length} महीने बकाया हैं। कुल राशि: ₹${totalAmount}। क्या आप भुगतान करना चाहते हैं?`)) {
             let paidMonthsList = [];
             for(let p of pendingItems) {
-                let donation = { id: Date.now(), memberId, memberName: m.name, type: "monthly", month: p.month, year: p.year, amount: m.monthlyAmount, receiptNo: getNextReceiptNo(), date: new Date().toISOString().slice(0,10), mode: "cash", created_by: currentUser.name };
+                let donation = { id: Date.now(), memberId, memberName: m.name, type: "monthly", month: p.monthName, monthIndex: p.monthIndex, year: p.year, amount: m.monthlyAmount, receiptNo: getNextReceiptNo(), date: new Date().toISOString().slice(0,10), mode: "cash", created_by: currentUser.name };
                 appData.donations.push(donation);
-                paidMonthsList.push({ month: p.month, year: p.year, amount: m.monthlyAmount });
+                paidMonthsList.push({ month: p.monthName, year: p.year, amount: m.monthlyAmount });
             }
             computeAdvanceAndPending();
             saveToLocal();
@@ -1302,7 +1427,7 @@
     function renderPendingList() { 
         computeAdvanceAndPending(); 
         let pendingMembers = appData.members.filter(m=>m.pending>0 && m.status==='active'); 
-        let html = pendingMembers.map(m => `<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span><button class="btn-sm btn-success" onclick="openDonationForMember(${m.id})">💳</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div>`).join(''); 
+        let html = pendingMembers.map(m => `<div class="member-card"><span><strong>${m.name}</strong> - ₹${m.pending}</span><div><button class="btn-sm btn-success" onclick="openPaymentModal(${m.id})">💳 भुगतान</button>${canSendReminder() ? `<button class="btn-sm btn-warning" onclick="sendReminder(${m.id})">📱</button>` : ''}</div></div>`).join(''); 
         document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">⚠️ बकाया सदस्य</div><div><button class="btn btn-success" onclick="sharePendingList()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printReport('pending')"><i class="fas fa-print"></i> प्रिंट</button><button class="btn btn-primary" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> एक्सेल</button></div>${html}</div>`; 
     }
     
@@ -1432,7 +1557,7 @@
                 totalExpense += expense;
                 monthlyRows += `<tr><td style="color:var(--saffron);">${months[i]}<td style="color:var(--success);">₹${income.toFixed(2)}<td style="color:var(--danger);">₹${expense.toFixed(2)}<td style="color:${income - expense >= 0 ? 'var(--success)' : 'var(--danger)'};">₹${(income - expense).toFixed(2)}</td>`;
             }
-            let contentHtml = `<div class="yearly-stats"><div class="yearly-stat-card"><h4>कुल आय</h4><p style="color:var(--success);">₹${totalIncome.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>कुल व्यय</h4><p style="color:var(--danger);">₹${totalExpense.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>शेष</h4><p style="color:var(--saffron);">₹${(totalIncome - totalExpense).toFixed(2)}</p></div></div><div style="overflow-x:auto;"><table class="data-table"><thead><th>महीना</th><th>आय (₹)</th><th>व्यय (₹)</th><th>लाभ/हानि</th></thead><tbody>${monthlyRows}</tbody><tfoot><tr style="background:#f0f0f0; font-weight:bold;"><th>कुल योग</th><td style="color:var(--success);">₹${totalIncome.toFixed(2)}</th><td style="color:var(--danger);">₹${totalExpense.toFixed(2)}</th><td style="color:${totalIncome - totalExpense >= 0 ? 'var(--success)' : 'var(--danger)'};">₹${(totalIncome - totalExpense).toFixed(2)}</th></tr></tfoot></div>`;
+            let contentHtml = `<div class="yearly-stats"><div class="yearly-stat-card"><h4>कुल आय</h4><p style="color:var(--success);">₹${totalIncome.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>कुल व्यय</h4><p style="color:var(--danger);">₹${totalExpense.toFixed(2)}</p></div><div class="yearly-stat-card"><h4>शेष</h4><p style="color:var(--saffron);">₹${(totalIncome - totalExpense).toFixed(2)}</p></div></div><div style="overflow-x:auto;"><table class="data-table"><thead><th>महीना</th><th>आय (₹)</th><th>व्यय (₹)</th><th>लाभ/हानि</th></thead><tbody>${monthlyRows}</tbody><tfoot><tr style="background:#f0f0f0; font-weight:bold;"><th>कुल योग</th><td style="color:var(--success);">₹${totalIncome.toFixed(2)}</th><td style="color:var(--danger);">₹${totalExpense.toFixed(2)}</th><td style="color:${totalIncome - totalExpense >= 0 ? 'var(--success)' : 'var(--danger)'};">₹${(totalIncome - totalExpense).toFixed(2)}</th><tr></tfoot></div>`;
             document.getElementById('ledgerContent').innerHTML = contentHtml;
         }
         updateLedgerContent();
@@ -1449,7 +1574,7 @@
     
     function renderRamcharitmanas() { 
         let rows = appData.ramcharitmanas.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(p => `<tr><td style="color:var(--saffron);">${p.date}</td><td style="color:var(--cyan);">${p.nakshatra || 'पुष्य'}</td><td style="color:var(--teal);">${p.organizer}</td><td style="color:var(--gray);">${p.place || '-'}</td><td style="color:var(--gray);">${p.notes || '-'}</td><td style="color:var(--gray);">${canDelete() ? `<button class="btn-sm btn-danger" onclick="deletePath(${p.id})">🗑️</button>` : ''}</td></tr>`).join(''); 
-        document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठ (पुष्य नक्षत्र)</div>${canEdit() ? `<button class="btn btn-primary" onclick="addPath()">+ नया पाठ</button>` : ''}<div style="overflow-x:auto;"><table class="data-table"><thead><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th><th>नोट्स</th><th></th></thead><tbody>${rows || '<td><td colspan="6">कोई डाटा नहीं<th>'}</tbody></table></div><div class="mt-2"><button class="btn btn-success" onclick="shareRamcharitmanas()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printReport('members')"><i class="fas fa-print"></i> प्रिंट</button></div></div>`; 
+        document.getElementById('contentArea').innerHTML = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठ (पुष्य नक्षत्र)</div>${canEdit() ? `<button class="btn btn-primary" onclick="addPath()">+ नया पाठ</button>` : ''}<div style="overflow-x:auto;"><table class="data-table"><thead><th>तिथि</th><th>नक्षत्र</th><th>आयोजक</th><th>स्थान</th><th>नोट्स</th><th></th></thead><tbody>${rows || '</td><td colspan="6">कोई डाटा नहीं<th>'}</tbody></table></div><div class="mt-2"><button class="btn btn-success" onclick="shareRamcharitmanas()"><i class="fab fa-whatsapp"></i> भेजें</button><button class="btn btn-info" onclick="printReport('members')"><i class="fas fa-print"></i> प्रिंट</button></div></div>`; 
     }
     
     function shareRamcharitmanas() { 
@@ -1515,16 +1640,13 @@
     function renderConstruction() { 
         let p = appData.construction?.percentage || 35;
         let photos = appData.construction?.photos || [];
-        let expenses = appData.construction?.expenses || [];
         let photosHtml = photos.map(ph => `<div class="gallery-item"><img src="${ph.url}" style="width:100%;height:100%;object-fit:cover;" onclick="window.open('${ph.url}','_blank')"></div>`).join('');
-        let expensesHtml = expenses.map(e => `<div>${e.date ? new Date(e.date).toLocaleDateString() : ''}: ${e.note} - ₹${e.amount}</div>`).join('');
         let html = `<div class="card"><div class="card-title">🏗️ निर्माण प्रगति</div>
             <div>प्रगति: ${p}%</div><div class="progress-bar"><div class="progress-fill" style="width:${p}%"></div></div>
             ${canEdit() ? `<button class="btn-sm btn-primary" onclick="updateConstProgress()">प्रगति अपडेट करें</button>
             <button class="btn-sm btn-success" onclick="addConstructionPhoto()">+ फोटो जोड़ें</button>
             <button class="btn-sm btn-info" onclick="addConstructionExpense()">+ खर्च जोड़ें</button>` : ''}
             <div class="card-title mt-2">📸 निर्माण फोटो</div><div class="gallery-grid">${photosHtml || '<div>कोई फोटो नहीं</div>'}</div>
-            <div class="card-title mt-2">💰 निर्माण खर्च</div><div>${expensesHtml || '<p>कोई खर्च नहीं</p>'}</div>
         </div>`;
         document.getElementById('contentArea').innerHTML = html;
     }
@@ -1876,22 +1998,44 @@
     function renderDigitalSignature() {
         if(!canEditUser()) { document.getElementById('contentArea').innerHTML = '<div class="card">❌ केवल सुपर एडमिन</div>'; return; }
         let html = `<div class="card"><div class="card-title">🖊️ डिजिटल सिग्नेचर</div>
-            <p>अध्यक्ष का डिजिटल सिग्नेचर रसीद पर दिखेगा</p>
-            ${appData.settings.digitalSignature ? `<img src="${appData.settings.digitalSignature}" style="width:150px; border:1px solid #ddd; border-radius:10px; margin:10px 0;">` : ''}
-            <input type="file" id="signatureUpload" accept="image/*" class="form-control">
-            <button class="btn btn-primary" onclick="uploadSignature()">अपलोड करें</button>
+            <div style="margin-bottom:20px;">
+                <h4>अध्यक्ष का सिग्नेचर</h4>
+                ${appData.settings.presidentSignature ? `<img src="${appData.settings.presidentSignature}" style="width:150px; border:1px solid #ddd; border-radius:10px; margin:10px 0;">` : '<p>कोई सिग्नेचर अपलोड नहीं</p>'}
+                <input type="file" id="presidentSignatureUpload" accept="image/*" class="form-control">
+                <button class="btn btn-primary" onclick="uploadPresidentSignature()">अध्यक्ष सिग्नेचर अपलोड करें</button>
+            </div>
+            <div style="margin-top:20px;">
+                <h4>सचिव का सिग्नेचर</h4>
+                ${appData.settings.secretarySignature ? `<img src="${appData.settings.secretarySignature}" style="width:150px; border:1px solid #ddd; border-radius:10px; margin:10px 0;">` : '<p>कोई सिग्नेचर अपलोड नहीं</p>'}
+                <input type="file" id="secretarySignatureUpload" accept="image/*" class="form-control">
+                <button class="btn btn-primary" onclick="uploadSecretarySignature()">सचिव सिग्नेचर अपलोड करें</button>
+            </div>
         </div>`;
         document.getElementById('contentArea').innerHTML = html;
     }
     
-    function uploadSignature() {
-        let file = document.getElementById('signatureUpload').files[0];
+    function uploadPresidentSignature() {
+        let file = document.getElementById('presidentSignatureUpload').files[0];
         if(file) {
             let reader = new FileReader();
             reader.onload = (e) => {
-                appData.settings.digitalSignature = e.target.result;
+                appData.settings.presidentSignature = e.target.result;
                 saveToLocal();
-                showToast("✅ डिजिटल सिग्नेचर अपलोड हो गया");
+                showToast("✅ अध्यक्ष का डिजिटल सिग्नेचर अपलोड हो गया");
+                renderDigitalSignature();
+            };
+            reader.readAsDataURL(file);
+        } else { showToast("⚠️ फाइल चुनें", true); }
+    }
+    
+    function uploadSecretarySignature() {
+        let file = document.getElementById('secretarySignatureUpload').files[0];
+        if(file) {
+            let reader = new FileReader();
+            reader.onload = (e) => {
+                appData.settings.secretarySignature = e.target.result;
+                saveToLocal();
+                showToast("✅ सचिव का डिजिटल सिग्नेचर अपलोड हो गया");
                 renderDigitalSignature();
             };
             reader.readAsDataURL(file);
