@@ -190,10 +190,6 @@
         <div id="loginError" style="color:red; margin-top:12px; font-size:12px;"></div>
         <button class="forgot-password-link" onclick="forgotPassword()">🔑 पासवर्ड भूल गए?</button>
         <button class="forgot-password-link" onclick="showRegisterModal()">📝 नया अकाउंट बनाएं</button>
-        <div style="font-size:11px; margin-top:16px; padding:10px; background:#f0f0f0; border-radius:30px;">
-            👉 <strong>super@mandir.com</strong> / super123 &nbsp;|&nbsp; <strong>admin@mandir.com</strong> / admin123<br>
-            👉 <strong>operator@mandir.com</strong> / oper123 &nbsp;|&nbsp; <strong>viewer@mandir.com</strong> / view123
-        </div>
         <div id="syncStatus" class="sync-status syncing" style="margin-top:10px; text-align:center;">🔄 क्लाउड से कनेक्ट हो रहा...</div>
     </div>
 </div>
@@ -210,6 +206,9 @@
             <div class="share-btn" onclick="shareApp()"><i class="fas fa-share-alt"></i></div>
             <div class="install-btn" id="installAppBtn" onclick="installApp()" style="display:none;"><i class="fas fa-download"></i></div>
             <div class="refresh-btn" onclick="syncFromCloud()"><i class="fas fa-cloud-sync-alt"></i></div>
+            <div class="admin-requests-btn" onclick="showAdminRequests()" id="adminRequestsBtn" style="display:none; background:rgba(255,255,255,0.2); padding:8px 12px; border-radius:40px; cursor:pointer;">
+                <i class="fas fa-bell"></i> <span id="requestCount">0</span>
+            </div>
             <span id="userName" style="font-size:13px; font-weight:600;"></span>
             <span id="userRoleBadge" class="role-admin"></span>
             <i class="fas fa-moon" id="darkModeToggle" style="cursor:pointer; font-size:18px;"></i>
@@ -248,13 +247,17 @@ firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 const auth = firebase.auth();
 
+// ==================== SECRET CODE FOR REGISTRATION ====================
+const SECRET_CODE = "9165463286"; // सिर्फ Admin/Super Admin को पता होगा
+
 // ==================== GLOBAL VARIABLES ====================
 let appData = {
     settings: { committeeName: "🚩 भव्य मंदिर निर्माण समिति 🚩", committeeSubtitle: "गुलाबपुरा (मोहनगढ़)", upiId: "asryadavtkg@ybl", president: "राजेन्द्र यादव जी", secretary: "अरविन्द सिंह यादव", presidentMobile: "9754452583", secretaryMobile: "9165463286", presidentSignature: "", secretarySignature: "", logo: "", whatsappGroupLink: "", telegramGroupLink: "", facebookLink: "", instagramLink: "", youtubeLink: "", committeeObjective: "भव्य मंदिर निर्माण एवं धार्मिक कार्यों का संचालन", monthlyTarget: 50000, defaultReminderMsg: "🚩 *जय श्री राम* 🚩\n\nआदरणीय [NAME] जी,\nभव्य मंदिर निर्माण समिति आपके निरंतर सहयोग हेतु हृदय से आभारी है।\nआपका मासिक विवरण:\n[DETAILS]\n💰 कुल शेष बकाया: ₹[PENDING]\n💸 UPI ID: [UPI_ID]" },
     members: [], donations: [], expenses: [], events: [], ramcharitmanas: [], gallery: [], auditLogs: [], users: [], committees: [], receipts: [], construction: { percentage: 35, photos: [], expenses: [] }, loginHistory: [], announcements: [], meetings: [], transactions: [], 
     deletedMembers: [], deletedDonations: [], deletedExpenses: [], deletedTransactions: [], deletedEvents: [], deletedMeetings: [], deletedAnnouncements: [],
     nextReceiptCounter: 1, nextTransactionReceiptCounter: 1,
-    committeeMembers: [], otherDonations: [], ramcharitmanasReaders: [], committeeTransactions: [], mediaFiles: []
+    committeeMembers: [], otherDonations: [], ramcharitmanasReaders: [], committeeTransactions: [], mediaFiles: [],
+    pendingRegistrations: [] // नए रजिस्ट्रेशन रिक्वेस्ट
 };
 let currentUser = null, currentMain = "home", currentSub = "dashboard", navigationStack = [];
 let yearlyChart = null, trendChart = null, pieChart = null, dashboardMonthChart = null, dashboardYearChart = null;
@@ -348,17 +351,259 @@ function saveToFirebase() {
     });
 }
 
-// ==================== REALTIME LISTENERS ====================
+// ==================== PENDING REGISTRATION REQUESTS ====================
+async function showRegisterModal() {
+    let html = `<div class="modal"><div class="modal-content"><h3>📝 नया अकाउंट बनाएं</h3>
+        <input type="email" id="regEmail" placeholder="ईमेल" class="form-control">
+        <input type="password" id="regPassword" placeholder="पासवर्ड" class="form-control">
+        <input type="text" id="regName" placeholder="आपका नाम" class="form-control">
+        <select id="regRole" class="form-control"><option value="viewer">व्यूअर</option><option value="operator">ऑपरेटर</option><option value="admin">एडमिन</option></select>
+        <input type="password" id="regSecretCode" placeholder="सीक्रेट कोड (आवश्यक)" class="form-control">
+        <div class="flex-between"><button class="btn btn-primary" onclick="registerWithVerification()">रजिस्टर करें</button>
+        <button class="btn btn-secondary" onclick="closeModal()">रद्द</button></div>
+        <div style="margin-top:10px; font-size:11px; color:#666; text-align:center;">⚠️ सीक्रेट कोड के बिना रजिस्ट्रेशन संभव नहीं है</div>
+    </div></div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function registerWithVerification() {
+    let email = document.getElementById('regEmail').value;
+    let password = document.getElementById('regPassword').value;
+    let name = document.getElementById('regName').value;
+    let role = document.getElementById('regRole').value;
+    let secretCode = document.getElementById('regSecretCode').value;
+    
+    if(!email || !password || !name) {
+        showToast("सभी फील्ड भरें", true);
+        return;
+    }
+    
+    if(secretCode !== SECRET_CODE) {
+        showToast("❌ सीक्रेट कोड गलत है! आप रजिस्टर नहीं कर सकते।", true);
+        return;
+    }
+    
+    try {
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        await userCredential.user.updateProfile({ displayName: name });
+        await database.ref(`mandir_app/users/${userCredential.user.uid}`).set({
+            email: email,
+            name: name,
+            role: role,
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            approved: true
+        });
+        closeModal();
+        showToast("✅ अकाउंट बन गया! अब लॉगिन करें");
+    } catch(error) {
+        showToast("❌ " + error.message, true);
+    }
+}
+
+async function loginWithGoogle() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+        const result = await auth.signInWithPopup(provider);
+        const user = result.user;
+        const userRef = database.ref(`mandir_app/users/${user.uid}`);
+        const snapshot = await userRef.once('value');
+        if(!snapshot.exists()) {
+            showToast("❌ आपका अकाउंट अप्रूव नहीं है। एडमिन से संपर्क करें।", true);
+            await auth.signOut();
+            return;
+        }
+        const userData = snapshot.val();
+        if(!userData.approved) {
+            showToast("❌ आपका अकाउंट अभी अप्रूव नहीं हुआ है। कृपया प्रतीक्षा करें।", true);
+            await auth.signOut();
+            return;
+        }
+        currentUser = {
+            uid: user.uid,
+            email: user.email,
+            name: user.displayName || user.email.split('@')[0],
+            role: userData.role || "viewer",
+            photo: user.photoURL
+        };
+        afterLogin();
+    } catch(error) {
+        showToast("❌ Google लॉगिन फेल: " + error.message, true);
+    }
+}
+
+async function doLogin() {
+    let email = document.getElementById('loginEmail').value;
+    let password = document.getElementById('loginPassword').value;
+    if(!email || !password) {
+        document.getElementById('loginError').innerHTML = "❌ ईमेल और पासवर्ड दोनों भरें";
+        return;
+    }
+    try {
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        const userRef = database.ref(`mandir_app/users/${user.uid}`);
+        const snapshot = await userRef.once('value');
+        let userData = snapshot.val();
+        
+        if(!userData || !userData.approved) {
+            showToast("❌ आपका अकाउंट अप्रूव नहीं है। एडमिन से संपर्क करें।", true);
+            await auth.signOut();
+            return;
+        }
+        
+        currentUser = {
+            uid: user.uid,
+            email: email,
+            name: user.displayName || email.split('@')[0],
+            role: userData.role
+        };
+        afterLogin();
+    } catch(error) {
+        document.getElementById('loginError').innerHTML = "❌ " + error.message;
+    }
+}
+
+function afterLogin() {
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'block';
+    document.getElementById('userName').innerHTML = currentUser.name;
+    let roleText = currentUser.role === 'super_admin' ? 'सुपर एडमिन' : (currentUser.role === 'admin' ? 'एडमिन' : (currentUser.role === 'operator' ? 'ऑपरेटर' : 'व्यूअर'));
+    document.getElementById('userRoleBadge').innerHTML = roleText;
+    document.getElementById('userRoleBadge').className = `role-${currentUser.role}`;
+    
+    if(currentUser.role === 'admin' || currentUser.role === 'super_admin') {
+        document.getElementById('adminRequestsBtn').style.display = 'inline-flex';
+        loadPendingRequests();
+    }
+    
+    updateSyncStatus('syncing', '🔄 क्लाउड से डेटा लाया जा रहा...');
+    loadAllDataFromFirebase();
+    setupRealtimeSync();
+    addLoginHistory();
+    renderNavigation();
+    renderCurrentPage();
+    addAuditLog("लॉगिन", "सफल");
+    showToast(`🙏 स्वागत है, ${currentUser.name} जी!`);
+}
+
+async function loadPendingRequests() {
+    const requestsRef = database.ref('mandir_app/pendingRegistrations');
+    requestsRef.on('value', (snapshot) => {
+        const requests = snapshot.val();
+        const count = requests ? Object.keys(requests).length : 0;
+        document.getElementById('requestCount').innerHTML = count;
+        appData.pendingRegistrations = requests ? Object.entries(requests).map(([id, data]) => ({ id, ...data })) : [];
+    });
+}
+
+function showAdminRequests() {
+    if(!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'super_admin')) {
+        showToast("❌ आपके पास यह एक्सेस नहीं है", true);
+        return;
+    }
+    
+    if(appData.pendingRegistrations.length === 0) {
+        showToast("📭 कोई पेंडिंग रिक्वेस्ट नहीं है", false);
+        return;
+    }
+    
+    let requestsHtml = appData.pendingRegistrations.map(req => `
+        <div class="member-card" style="margin-bottom:10px;">
+            <div><strong>${req.name}</strong><br>📧 ${req.email}<br>🎭 रोल: ${req.requestedRole}</div>
+            <div style="margin-top:10px;">
+                <button class="btn-sm btn-success" onclick="approveUser('${req.id}', '${req.email}', '${req.name}', '${req.requestedRole}')">✅ अप्रूव करें</button>
+                <button class="btn-sm btn-danger" onclick="rejectUser('${req.id}')">❌ रिजेक्ट करें</button>
+            </div>
+        </div>
+    `).join('');
+    
+    let html = `<div class="modal"><div class="modal-content"><h3>👥 पेंडिंग रजिस्ट्रेशन रिक्वेस्ट (${appData.pendingRegistrations.length})</h3>
+        ${requestsHtml}
+        <button class="btn btn-secondary" onclick="closeModal()">बंद करें</button>
+    </div></div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function approveUser(requestId, email, name, role) {
+    try {
+        const userRef = database.ref(`mandir_app/users`);
+        const usersSnapshot = await userRef.once('value');
+        let userId = null;
+        usersSnapshot.forEach((snap) => {
+            const userData = snap.val();
+            if(userData.email === email) {
+                userId = snap.key;
+            }
+        });
+        
+        if(userId) {
+            await database.ref(`mandir_app/users/${userId}`).update({
+                approved: true,
+                role: role,
+                name: name
+            });
+        } else {
+            showToast("❌ यूजर नहीं मिला", true);
+            return;
+        }
+        
+        await database.ref(`mandir_app/pendingRegistrations/${requestId}`).remove();
+        showToast(`✅ ${name} को अप्रूव कर दिया गया`);
+        loadPendingRequests();
+        closeModal();
+    } catch(error) {
+        showToast("❌ " + error.message, true);
+    }
+}
+
+async function rejectUser(requestId) {
+    if(confirm("क्या आप इस रिक्वेस्ट को रिजेक्ट करना चाहते हैं?")) {
+        await database.ref(`mandir_app/pendingRegistrations/${requestId}`).remove();
+        showToast("✅ रिक्वेस्ट रिजेक्ट कर दी गई");
+        loadPendingRequests();
+        closeModal();
+    }
+}
+
+function doLogout() {
+    if(bulkInterval) clearInterval(bulkInterval);
+    syncListeners.forEach(listener => listener());
+    syncListeners = [];
+    auth.signOut().then(() => {
+        currentUser = null;
+        document.getElementById('loginPage').style.display = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
+        navigationStack = [];
+        showToast("🔓 लॉगआउट");
+    }).catch(error => {
+        console.error("Logout error:", error);
+    });
+}
+
+async function forgotPassword() {
+    let email = prompt("अपना रजिस्टर्ड ईमेल दर्ज करें:");
+    if(!email) return;
+    try {
+        await auth.sendPasswordResetEmail(email);
+        showToast("✅ पासवर्ड रीसेट लिंक आपके ईमेल पर भेज दिया गया है");
+    } catch(error) {
+        showToast("❌ " + error.message, true);
+    }
+}
+
+// ==================== REST OF THE FUNCTIONS (PRESERVED) ====================
+// [IMPORTANT: All existing functions from previous code remain here]
+// Due to length constraints, I'm including the complete function set
+// The user has the full working code from previous responses
+
 function setupRealtimeSync() {
     if(!currentUser) return;
     const userId = currentUser.uid;
     const dbRef = database.ref(`mandir_app/${userId}`);
     
-    // Remove old listeners
     syncListeners.forEach(listener => listener());
     syncListeners = [];
     
-    // Add new listener
     const listener = dbRef.on('value', (snapshot) => {
         if(syncInProgress) return;
         const data = snapshot.val();
@@ -403,7 +648,6 @@ function setupRealtimeSync() {
     syncListeners.push(() => dbRef.off('value', listener));
 }
 
-// ==================== ONLINE/OFFLINE DETECTION ====================
 window.addEventListener('online', () => {
     isOnline = true;
     document.getElementById('offlineStatus').style.display = 'none';
@@ -418,151 +662,6 @@ window.addEventListener('offline', () => {
     showToast("📡 इंटरनेट नहीं है, ऑफलाइन मोड में हैं", true);
     updateSyncStatus('offline', '📡 ऑफलाइन मोड');
 });
-
-// ==================== AUTHENTICATION FUNCTIONS ====================
-function showRegisterModal() {
-    let html = `<div class="modal"><div class="modal-content"><h3>📝 नया अकाउंट बनाएं</h3>
-        <input type="email" id="regEmail" placeholder="ईमेल" class="form-control">
-        <input type="password" id="regPassword" placeholder="पासवर्ड" class="form-control">
-        <input type="text" id="regName" placeholder="आपका नाम" class="form-control">
-        <select id="regRole" class="form-control"><option value="viewer">व्यूअर</option><option value="operator">ऑपरेटर</option><option value="admin">एडमिन</option></select>
-        <div class="flex-between"><button class="btn btn-primary" onclick="registerUser()">रजिस्टर करें</button>
-        <button class="btn btn-secondary" onclick="closeModal()">रद्द</button></div></div></div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
-}
-
-async function registerUser() {
-    let email = document.getElementById('regEmail').value;
-    let password = document.getElementById('regPassword').value;
-    let name = document.getElementById('regName').value;
-    let role = document.getElementById('regRole').value;
-    
-    if(!email || !password || !name) {
-        showToast("सभी फील्ड भरें", true);
-        return;
-    }
-    try {
-        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        await userCredential.user.updateProfile({ displayName: name });
-        await database.ref(`mandir_app/users/${userCredential.user.uid}`).set({
-            email: email,
-            name: name,
-            role: role,
-            createdAt: firebase.database.ServerValue.TIMESTAMP
-        });
-        closeModal();
-        showToast("✅ अकाउंट बन गया! अब लॉगिन करें");
-    } catch(error) {
-        showToast("❌ " + error.message, true);
-    }
-}
-
-async function loginWithGoogle() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    try {
-        const result = await auth.signInWithPopup(provider);
-        const user = result.user;
-        const userRef = database.ref(`mandir_app/users/${user.uid}`);
-        const snapshot = await userRef.once('value');
-        if(!snapshot.exists()) {
-            await userRef.set({
-                email: user.email,
-                name: user.displayName,
-                role: "viewer",
-                createdAt: firebase.database.ServerValue.TIMESTAMP
-            });
-        }
-        const roleSnap = await userRef.once('value');
-        const userRole = roleSnap.val()?.role || "viewer";
-        currentUser = {
-            uid: user.uid,
-            email: user.email,
-            name: user.displayName,
-            role: userRole,
-            photo: user.photoURL
-        };
-        afterLogin();
-    } catch(error) {
-        showToast("❌ Google लॉगिन फेल: " + error.message, true);
-    }
-}
-
-async function doLogin() {
-    let email = document.getElementById('loginEmail').value;
-    let password = document.getElementById('loginPassword').value;
-    if(!email || !password) {
-        document.getElementById('loginError').innerHTML = "❌ ईमेल और पासवर्ड दोनों भरें";
-        return;
-    }
-    try {
-        const userCredential = await auth.signInWithEmailAndPassword(email, password);
-        const user = userCredential.user;
-        const userRef = database.ref(`mandir_app/users/${user.uid}`);
-        const snapshot = await userRef.once('value');
-        let userRole = "viewer";
-        if(snapshot.exists()) {
-            userRole = snapshot.val().role;
-        } else {
-            if(email === "super@mandir.com") userRole = "super_admin";
-            else if(email === "admin@mandir.com") userRole = "admin";
-            else if(email === "operator@mandir.com") userRole = "operator";
-            else userRole = "viewer";
-            await userRef.set({ email: email, name: user.displayName || email.split('@')[0], role: userRole });
-        }
-        currentUser = {
-            uid: user.uid,
-            email: email,
-            name: user.displayName || email.split('@')[0],
-            role: userRole
-        };
-        afterLogin();
-    } catch(error) {
-        document.getElementById('loginError').innerHTML = "❌ " + error.message;
-    }
-}
-
-function afterLogin() {
-    document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('appContainer').style.display = 'block';
-    document.getElementById('userName').innerHTML = currentUser.name;
-    let roleText = currentUser.role === 'super_admin' ? 'सुपर एडमिन' : (currentUser.role === 'admin' ? 'एडमिन' : (currentUser.role === 'operator' ? 'ऑपरेटर' : 'व्यूअर'));
-    document.getElementById('userRoleBadge').innerHTML = roleText;
-    document.getElementById('userRoleBadge').className = `role-${currentUser.role}`;
-    updateSyncStatus('syncing', '🔄 क्लाउड से डेटा लाया जा रहा...');
-    loadAllDataFromFirebase();
-    setupRealtimeSync();
-    addLoginHistory();
-    renderNavigation();
-    renderCurrentPage();
-    addAuditLog("लॉगिन", "सफल");
-    showToast(`🙏 स्वागत है, ${currentUser.name} जी!`);
-}
-
-function doLogout() {
-    if(bulkInterval) clearInterval(bulkInterval);
-    syncListeners.forEach(listener => listener());
-    syncListeners = [];
-    auth.signOut().then(() => {
-        currentUser = null;
-        document.getElementById('loginPage').style.display = 'flex';
-        document.getElementById('appContainer').style.display = 'none';
-        navigationStack = [];
-        showToast("🔓 लॉगआउट");
-    }).catch(error => {
-        console.error("Logout error:", error);
-    });
-}
-
-async function forgotPassword() {
-    let email = prompt("अपना रजिस्टर्ड ईमेल दर्ज करें:");
-    if(!email) return;
-    try {
-        await auth.sendPasswordResetEmail(email);
-        showToast("✅ पासवर्ड रीसेट लिंक आपके ईमेल पर भेज दिया गया है");
-    } catch(error) {
-        showToast("❌ " + error.message, true);
-    }
-}
 
 // ==================== CREATE MANIFEST DYNAMICALLY ====================
 (function createManifest() {
@@ -615,7 +714,7 @@ window.installApp = function() {
     }
 };
 
-// ==================== INLINE QR CODE GENERATOR (NO 404 ERROR) ====================
+// ==================== INLINE QR CODE GENERATOR ====================
 function generateSimpleQR(elementId, text) {
     let container = document.getElementById(elementId);
     if(!container) return;
@@ -927,7 +1026,7 @@ function refreshDashboardCharts() { if (currentMain === 'home' && currentSub ===
 
 function printGenericReport(title, headers, dataRows) {
     let win = window.open('', '_blank');
-    win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial;padding:20px;background:white}h2{color:#FF9933;text-align:center}table{border-collapse:collapse;width:100%;margin-top:15px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#FF9933;color:white}.footer{margin-top:20px;text-align:center}button{margin-top:20px;padding:8px 16px;background:#FF9933;border:none;border-radius:5px;cursor:pointer}@media print{button{display:none}}</style></head><body><h2>${appData.settings.committeeName}</h2><h3 style="text-align:center">${title}</h3><table border="1"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${dataRows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table><div class="footer"><p>${appData.settings.president} (अध्यक्ष) | ${appData.settings.secretary} (सचिव)</p><p>🙏 जय श्री राम 🙏</p></div><div style="text-align:center"><button onclick="window.print()">🖨️ प्रिंट</button> <button onclick="window.close()">बंद</button></div></body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial;padding:20px;background:white}h2{color:#FF9933;text-align:center}table{border-collapse:collapse;width:100%;margin-top:15px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#FF9933;color:white}.footer{margin-top:20px;text-align:center}button{margin-top:20px;padding:8px 16px;background:#FF9933;border:none;border-radius:5px;cursor:pointer}@media print{button{display:none}}</style></head><body><h2>${appData.settings.committeeName}</h2><h3 style="text-align:center">${title}</h3><table border="1"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${dataRows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody><tr><div class="footer"><p>${appData.settings.president} (अध्यक्ष) | ${appData.settings.secretary} (सचिव)</p><p>🙏 जय श्री राम 🙏</p></div><div style="text-align:center"><button onclick="window.print()">🖨️ प्रिंट</button> <button onclick="window.close()">बंद</button></div></body></html>`);
     win.document.close();
 }
 
@@ -1386,7 +1485,7 @@ function sendOtherDonationsToPresident() { let total = appData.otherDonations.re
 function sendDonationReceipt(id) { let od = appData.otherDonations.find(x=>x.id===id); if(!od) return; let msg = `🚩 *जय श्री राम* 🚩\n\n✅ *दान रसीद*\n📅 तिथि: ${od.date}\n📋 प्रकार: ${od.donationType}\n👤 दाता: ${od.donorName}\n💰 राशि: ₹${od.amount}\n📝 विवरण: ${od.note||'-'}\n💸 UPI ID: ${appData.settings.upiId}\n\n🙏 धन्यवाद - ${appData.settings.committeeName}`; window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank'); }
 
 // ==================== RAMCHARITMANAS READERS ====================
-function renderRamcharitmanasReaders() { let html = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठी (30 घंटे निरंतर पाठ)<div><button class="print-btn" onclick="printRamcharitmanasReaders()"><i class="fas fa-print"></i> प्रिंट</button><button class="whatsapp-president-btn" onclick="sendReadersToPresident()"><i class="fab fa-whatsapp"></i> अध्यक्ष को भेजें</button></div></div><div class="stats-grid"><div class="stat-card"><div class="stat-value">${appData.ramcharitmanasReaders.length}</div><div class="stat-label">कुल पाठी</div></div><div class="stat-card"><div class="stat-value">${appData.ramcharitmanasReaders.reduce((s,r)=>s+r.hours,0)}</div><div class="stat-label">कुल घंटे</div></div></div>${canEdit()?`<div class="flex-between"><input id="readerName" placeholder="पाठी का नाम *" class="form-control" style="width:25%"><input id="readerShiftStart" type="time" value="06:00" placeholder="प्रारंभ" class="form-control" style="width:15%"><input id="readerShiftEnd" type="time" value="12:00" placeholder="समाप्ति" class="form-control" style="width:15%"><input id="readerHours" type="number" placeholder="घंटे" class="form-control" style="width:15%"><input type="date" id="readerDate" value="${new Date().toISOString().slice(0,10)}" class="form-control" style="width:20%"><button class="btn btn-primary" onclick="addRamcharitmanasReader()">+ जोड़ें</button></div><textarea id="readerNote" placeholder="टिप्पणी (वैकल्पिक)" class="form-control"></textarea>`:''}<div class="table-wrapper"><table class="data-table"><thead><th>तिथि</th><th>नाम</th><th>प्रारंभ</th><th>समाप्ति</th><th>घंटे</th><th>टिप्पणी</th><th>कार्य</th></thead><tbody id="readersBody"></tbody></td></div></div>`; document.getElementById('contentArea').innerHTML = html; renderReadersList(); }
+function renderRamcharitmanasReaders() { let html = `<div class="card"><div class="card-title">📖 रामचरितमानस पाठी (30 घंटे निरंतर पाठ)<div><button class="print-btn" onclick="printRamcharitmanasReaders()"><i class="fas fa-print"></i> प्रिंट</button><button class="whatsapp-president-btn" onclick="sendReadersToPresident()"><i class="fab fa-whatsapp"></i> अध्यक्ष को भेजें</button></div></div><div class="stats-grid"><div class="stat-card"><div class="stat-value">${appData.ramcharitmanasReaders.length}</div><div class="stat-label">कुल पाठी</div></div><div class="stat-card"><div class="stat-value">${appData.ramcharitmanasReaders.reduce((s,r)=>s+r.hours,0)}</div><div class="stat-label">कुल घंटे</div></div></div>${canEdit()?`<div class="flex-between"><input id="readerName" placeholder="पाठी का नाम *" class="form-control" style="width:25%"><input id="readerShiftStart" type="time" value="06:00" placeholder="प्रारंभ" class="form-control" style="width:15%"><input id="readerShiftEnd" type="time" value="12:00" placeholder="समाप्ति" class="form-control" style="width:15%"><input id="readerHours" type="number" placeholder="घंटे" class="form-control" style="width:15%"><input type="date" id="readerDate" value="${new Date().toISOString().slice(0,10)}" class="form-control" style="width:20%"><button class="btn btn-primary" onclick="addRamcharitmanasReader()">+ जोड़ें</button></div><textarea id="readerNote" placeholder="टिप्पणी (वैकल्पिक)" class="form-control"></textarea>`:''}<div class="table-wrapper"><table class="data-table"><thead><th>तिथि</th><th>नाम</th><th>प्रारंभ</th><th>समाप्ति</th><th>घंटे</th><th>टिप्पणी</th><th>कार्य</th></thead><tbody id="readersBody"></tbody></table></div></div>`; document.getElementById('contentArea').innerHTML = html; renderReadersList(); }
 function renderReadersList() { let tbody = document.getElementById('readersBody'); if(tbody) tbody.innerHTML = appData.ramcharitmanasReaders.slice().reverse().map(r=>`<tr><td style="font-size:11px">${r.date}<\/td><td><strong>${r.name}<\/strong><\/td><td>${r.shiftStart||'-'}<\/td><td>${r.shiftEnd||'-'}<\/td><td class="badge-active">${r.hours} घंटे<\/td><td>${r.note||'-'}<\/td><td class="action-buttons">${canEdit()?`<button class="btn-sm btn-info" onclick="editReader(${r.id})">✏️</button><button class="btn-sm btn-danger" onclick="deleteReader(${r.id})">🗑️</button>`:''}<button class="whatsapp-president-btn" onclick="sendReaderMessage(${r.id})"><i class="fab fa-whatsapp"></i></button><\/td><\/tr>`).join(''); saveToLocalStorage(); saveToFirebase(); }
 function addRamcharitmanasReader() { if(!canEdit()) return; let name = document.getElementById('readerName').value; if(!name){ showToast("पाठी का नाम आवश्यक है", true); return; } let start = document.getElementById('readerShiftStart').value; let end = document.getElementById('readerShiftEnd').value; let hours = parseFloat(document.getElementById('readerHours').value); if(isNaN(hours) || hours<=0) hours = (new Date(`2000-01-01T${end}:00`) - new Date(`2000-01-01T${start}:00`))/3600000; let r = { id: Date.now(), name: name, shiftStart: start, shiftEnd: end, hours: hours, date: document.getElementById('readerDate').value, note: document.getElementById('readerNote').value, editHistory: [] }; appData.ramcharitmanasReaders.push(r); saveToLocalStorage(); saveToFirebase(); renderRamcharitmanasReaders(); showToast("✅ पाठी जोड़ा"); }
 function editReader(id) { let r = appData.ramcharitmanasReaders.find(x=>x.id===id); let historyHtml = renderEditHistory(r, 'पाठी'); let html = `<div class="modal"><div class="modal-content"><h3>✏️ पाठी संपादन - ${r.name}</h3><input id="editReaderName" value="${r.name}" class="form-control"><input id="editReaderStart" type="time" value="${r.shiftStart||'06:00'}" class="form-control"><input id="editReaderEnd" type="time" value="${r.shiftEnd||'12:00'}" class="form-control"><input id="editReaderHours" type="number" value="${r.hours}" class="form-control"><input type="date" id="editReaderDate" value="${r.date}" class="form-control"><textarea id="editReaderNote" class="form-control">${r.note||''}</textarea><textarea id="editReaderReason" placeholder="बदलाव का कारण *" class="form-control" required></textarea><div class="flex-between"><button class="btn btn-primary" onclick="updateReader(${id})">अपडेट करें</button><button class="btn btn-secondary" onclick="closeModal()">रद्द</button></div>${historyHtml}</div></div>`; document.body.insertAdjacentHTML('beforeend', html); }
@@ -1576,8 +1675,8 @@ function restoreDeletedMember(id) { let idx = appData.deletedMembers.findIndex(m
 function restoreDeletedTransaction(id) { let idx = appData.deletedTransactions.findIndex(t=>t.id===id); if(idx!==-1) { let restored = appData.deletedTransactions[idx]; let newId = Date.now(); restored.id = newId; delete restored.deletedAt; delete restored.deletedBy; restored.deleted = false; appData.transactions.push(restored); appData.deletedTransactions.splice(idx,1); saveToLocalStorage(); saveToFirebase(); showToast("✅ लेनदेन पुनर्स्थापित"); renderRecycleBin(); renderTransactionsMain(); refreshDashboardCharts(); addAuditLog("RESTORE_TRANSACTION", `लेनदेन ${restored.id} पुनर्स्थापित`); } }
 function restoreDeletedExpense(id) { let idx = appData.deletedExpenses.findIndex(e=>e.id===id); if(idx!==-1) { let restored = appData.deletedExpenses[idx]; let newId = Date.now(); restored.id = newId; delete restored.deletedAt; delete restored.deletedBy; appData.expenses.push(restored); appData.deletedExpenses.splice(idx,1); saveToLocalStorage(); saveToFirebase(); showToast("✅ व्यय पुनर्स्थापित"); renderRecycleBin(); renderExpenseList(); refreshDashboardCharts(); addAuditLog("RESTORE_EXPENSE", restored.category); } }
 function emptyRecycleBin() { if(confirm("⚠️ क्या आप रीसायकल बिन को पूरी तरह खाली करना चाहते हैं? यह क्रिया अपरिवर्तनीय है!")) { appData.deletedMembers = []; appData.deletedTransactions = []; appData.deletedExpenses = []; saveToLocalStorage(); saveToFirebase(); renderRecycleBin(); showToast("🗑️ रीसायकल बिन खाली कर दिया गया"); addAuditLog("EMPTY_RECYCLE_BIN", "सभी हटाए गए आइटम पूरी तरह हटाए गए"); } }
-function renderTransactionsMain() { if(!canManageTransactions()){ document.getElementById('contentArea').innerHTML='<div class="card">❌ आप लेनदेन नहीं देख सकते</div>'; return; } let totalDeposit = appData.transactions.filter(t=>t.type==='deposit' && !t.deleted).reduce((s,t)=>s+t.amount,0); let totalWithdraw = appData.transactions.filter(t=>t.type==='withdraw' && !t.deleted).reduce((s,t)=>s+t.amount,0); let balance = totalDeposit - totalWithdraw; let html = `<div class="card"><div class="card-title">💰 सचिव और कोषाध्यक्ष के बीच लेनदेन<div><button class="print-btn" onclick="printTransactionsList()"><i class="fas fa-print"></i> प्रिंट</button><button class="whatsapp-president-btn" onclick="sendTransactionsToPresident()"><i class="fab fa-whatsapp"></i> अध्यक्ष को भेजें</button></div></div><div class="balance-card"><h3>चालू बैलेंस</h3><p style="font-size:32px; font-weight:bold; color:var(--saffron)">₹${balance}</p><p>कुल जमा: ₹${totalDeposit} | कुल निकासी: ₹${totalWithdraw}</p></div><div class="flex-between"><button class="btn btn-success" onclick="openTransactionModal('deposit')"><i class="fas fa-plus-circle"></i> जमा</button><button class="btn btn-danger" onclick="openTransactionModal('withdraw')"><i class="fas fa-minus-circle"></i> निकासी</button></div><div class="table-wrapper"><table class="data-table"><thead><th>तिथि</th><th>रसीद नं.</th><th>प्रकार</th><th>राशि</th><th>विवरण</th><th>कार्य</th></thead><tbody id="transactionListBody"></tbody></td></div></div>`; document.getElementById('contentArea').innerHTML = html; renderTransactionsList(); }
-function renderTransactionsList() { let tbody = document.getElementById('transactionListBody'); if(!tbody) return; tbody.innerHTML = appData.transactions.filter(t => !t.deleted).slice().reverse().map(t=>`</td><td style="font-size:11px">${t.date}<\/td><td><span class="receipt-no">${t.receiptNo}<\/span><\/td><td class="${t.type==='deposit'?'text-success':'text-danger'}">${t.type==='deposit'?'जमा (+)':'निकासी (-)'}<\/td><td class="${t.type==='deposit'?'text-success':'text-danger'}">₹${t.amount}<\/td><td>${t.note||'-'}<\/td><td>${canDelete() ? `<button class="btn-sm btn-danger" onclick="deleteTransaction(${t.id})">🗑️</button>` : ''}<button class="btn-sm btn-info" onclick="editTransaction(${t.id})">✏️</button><\/td><\/tr>`).join(''); saveToLocalStorage(); saveToFirebase(); }
+function renderTransactionsMain() { if(!canManageTransactions()){ document.getElementById('contentArea').innerHTML='<div class="card">❌ आप लेनदेन नहीं देख सकते</div>'; return; } let totalDeposit = appData.transactions.filter(t=>t.type==='deposit' && !t.deleted).reduce((s,t)=>s+t.amount,0); let totalWithdraw = appData.transactions.filter(t=>t.type==='withdraw' && !t.deleted).reduce((s,t)=>s+t.amount,0); let balance = totalDeposit - totalWithdraw; let html = `<div class="card"><div class="card-title">💰 सचिव और कोषाध्यक्ष के बीच लेनदेन<div><button class="print-btn" onclick="printTransactionsList()"><i class="fas fa-print"></i> प्रिंट</button><button class="whatsapp-president-btn" onclick="sendTransactionsToPresident()"><i class="fab fa-whatsapp"></i> अध्यक्ष को भेजें</button></div></div><div class="balance-card"><h3>चालू बैलेंस</h3><p style="font-size:32px; font-weight:bold; color:var(--saffron)">₹${balance}</p><p>कुल जमा: ₹${totalDeposit} | कुल निकासी: ₹${totalWithdraw}</p></div><div class="flex-between"><button class="btn btn-success" onclick="openTransactionModal('deposit')"><i class="fas fa-plus-circle"></i> जमा</button><button class="btn btn-danger" onclick="openTransactionModal('withdraw')"><i class="fas fa-minus-circle"></i> निकासी</button></div><div class="table-wrapper"><table class="data-table"><thead><th>तिथि</th><th>रसीद नं.</th><th>प्रकार</th><th>राशि</th><th>विवरण</th><th>कार्य</th></thead><tbody id="transactionListBody"></tbody></table></div></div>`; document.getElementById('contentArea').innerHTML = html; renderTransactionsList(); }
+function renderTransactionsList() { let tbody = document.getElementById('transactionListBody'); if(!tbody) return; tbody.innerHTML = appData.transactions.filter(t => !t.deleted).slice().reverse().map(t=>`<tr><td style="font-size:11px">${t.date}<\/td><td><span class="receipt-no">${t.receiptNo}<\/span><\/td><td class="${t.type==='deposit'?'text-success':'text-danger'}">${t.type==='deposit'?'जमा (+)':'निकासी (-)'}<\/td><td class="${t.type==='deposit'?'text-success':'text-danger'}">₹${t.amount}<\/td><td>${t.note||'-'}<\/td><td>${canDelete() ? `<button class="btn-sm btn-danger" onclick="deleteTransaction(${t.id})">🗑️</button>` : ''}<button class="btn-sm btn-info" onclick="editTransaction(${t.id})">✏️</button><\/td><\/tr>`).join(''); saveToLocalStorage(); saveToFirebase(); }
 function openTransactionModal(type, transactionId=null) { let t = transactionId ? appData.transactions.find(x=>x.id===transactionId) : null; let html = `<div class="modal"><div class="modal-content"><h3>${t ? (t.type==='deposit'?'💰 जमा संपादन':'💸 निकासी संपादन') : (type==='deposit'?'💰 जमा':'💸 निकासी')}</h3><input type="number" id="transAmount" placeholder="राशि" value="${t ? t.amount : ''}" class="form-control"><input type="date" id="transDate" value="${t ? t.date : new Date().toISOString().slice(0,10)}" class="form-control"><textarea id="transNote" placeholder="विवरण / कारण" class="form-control">${t ? t.note||'' : ''}</textarea><textarea id="transReason" placeholder="बदलाव का कारण *" class="form-control" ${t ? '' : 'style="display:none"'}></textarea><div class="flex-between"><button class="btn btn-primary" onclick="${t ? `updateTransaction(${t.id})` : `saveTransaction('${type}')`}">${t ? 'अपडेट करें' : 'सेव करें'}</button><button class="btn btn-secondary" onclick="closeModal()">रद्द</button></div></div></div>`; document.body.insertAdjacentHTML('beforeend', html); }
 function saveTransaction(type) { let amount = parseFloat(document.getElementById('transAmount').value); let date = document.getElementById('transDate').value; let note = document.getElementById('transNote').value; if(isNaN(amount) || amount<=0){ showToast("⚠️ सही राशि डालें", true); return; } let receiptNo = `लेन-${String(appData.nextTransactionReceiptCounter++).padStart(5,'0')}`; let transaction = { id: Date.now(), type: type, amount: amount, date: date, note: note, receiptNo: receiptNo, created_by: currentUser.name, created_at: new Date().toISOString(), deleted: false, editHistory: [] }; appData.transactions.push(transaction); saveToLocalStorage(); saveToFirebase(); closeModal(); showToast(`✅ लेनदेन सफल! रसीद: ${receiptNo}`); renderTransactionsMain(); addAuditLog(`TRANSACTION_${type.toUpperCase()}`, `₹${amount} - ${note}`); refreshDashboardCharts(); }
 function editTransaction(id) { openTransactionModal(null, id); }
@@ -1588,6 +1687,22 @@ function sendTransactionsToPresident() { let totalDeposit = appData.transactions
 function getDataYears() { let currentYear = new Date().getFullYear(); let years = []; for (let y = 2024; y <= currentYear + 5; y++) years.push(y); return years; }
 async function confirmDoubleDelete(itemName) { if(!confirm(`⚠️ क्या आप सच में "${itemName}" को हटाना चाहते हैं?`)) return false; if(!confirm(`⚠️⚠️ यह कार्य अपरिवर्तनीय है! क्या आप पक्का "${itemName}" को हटाना चाहते हैं?`)) return false; return true; }
 function renderGroups() { renderSocialLinks(); }
+
+// ==================== AUTO SAVE & DATA PERSISTENCE ====================
+function startAutoSave() {
+    setInterval(() => {
+        if(currentUser && isOnline) {
+            saveToFirebase();
+        }
+    }, 60000);
+}
+
+window.addEventListener('beforeunload', () => {
+    if(currentUser) {
+        saveToFirebase();
+        saveToLocalStorage();
+    }
+});
 
 // ==================== NAVIGATION ====================
 function renderCurrentPage(){ if(!currentUser) return; 
@@ -1607,22 +1722,6 @@ function renderNavigation(){
 function addLoginHistory(){ if(currentUser) appData.loginHistory.unshift({ user:currentUser.name, email:currentUser.email, role:currentUser.role, timestamp:new Date().toISOString() }); saveToLocalStorage(); saveToFirebase(); }
 function shareApp(){ let msg=`🚩 ${appData.settings.committeeName}\nऐप लिंक: ${window.location.href}`; if(navigator.share) navigator.share({title:"मंदिर ऐप",text:msg}); else { navigator.clipboard.writeText(msg); showToast("📋 लिंक कॉपी"); } }
 function toggleLanguage(){ let btn=document.querySelector('.lang-btn'); if(btn) btn.innerHTML=btn.innerHTML.includes('English')?'🇮🇳 हिंदी':'🇮🇳 English'; showToast("भाषा बदली"); }
-
-// ==================== AUTO SAVE & DATA PERSISTENCE ====================
-function startAutoSave() {
-    setInterval(() => {
-        if(currentUser && isOnline) {
-            saveToFirebase();
-        }
-    }, 60000); // हर 1 मिनट में ऑटो सेव
-}
-
-window.addEventListener('beforeunload', () => {
-    if(currentUser) {
-        saveToFirebase();
-        saveToLocalStorage();
-    }
-});
 
 loadFromLocalStorage();
 startAutoSave();
