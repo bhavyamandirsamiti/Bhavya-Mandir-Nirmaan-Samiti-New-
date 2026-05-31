@@ -587,18 +587,237 @@ function compressImage(file, maxSizeKB, callback) {
     reader.readAsDataURL(file);
 }
 
-// Save photo: <20KB → Firebase + LocalStorage, >20KB → LocalStorage only
+// ==================== 🗄️ THREE-TIER STORAGE SYSTEM ====================
+// Tier 1: IndexedDB  → बड़ी files (videos, images >50KB, member photos)
+// Tier 2: LocalStorage → App data (members, donations, settings etc - text only)
+// Tier 3: Firebase REST → Cloud sync (small data only, no large binary)
+// =====================================================================
+
+const IDB_NAME    = 'mandirMediaDB';
+const IDB_VERSION = 1;
+const IDB_STORE   = 'mediaFiles';
+let   idb         = null; // IndexedDB connection
+
+// --- Open IndexedDB ---
+function openIndexedDB(cb) {
+    if(idb) { cb(idb); return; }
+    try {
+        let req = indexedDB.open(IDB_NAME, IDB_VERSION);
+        req.onupgradeneeded = function(e) {
+            let db = e.target.result;
+            if(!db.objectStoreNames.contains(IDB_STORE)) {
+                let store = db.createObjectStore(IDB_STORE, { keyPath: 'id' });
+                store.createIndex('type', 'type', { unique: false });
+                store.createIndex('date', 'date', { unique: false });
+            }
+        };
+        req.onsuccess = function(e) {
+            idb = e.target.result;
+            console.log('✅ IndexedDB ready');
+            cb(idb);
+        };
+        req.onerror = function(e) {
+            console.warn('IndexedDB open error:', e.target.error);
+            cb(null);
+        };
+    } catch(e) { console.warn('IndexedDB not supported:', e); cb(null); }
+}
+
+// --- Save to IndexedDB ---
+function idbSave(item, cb) {
+    openIndexedDB(function(db) {
+        if(!db) { if(cb) cb(false); return; }
+        try {
+            let tx = db.transaction(IDB_STORE, 'readwrite');
+            let store = tx.objectStore(IDB_STORE);
+            let req = store.put(item);
+            req.onsuccess = function() { if(cb) cb(true); };
+            req.onerror   = function() { if(cb) cb(false); };
+        } catch(e) { if(cb) cb(false); }
+    });
+}
+
+// --- Get from IndexedDB ---
+function idbGet(id, cb) {
+    openIndexedDB(function(db) {
+        if(!db) { cb(null); return; }
+        try {
+            let tx = db.transaction(IDB_STORE, 'readonly');
+            let req = tx.objectStore(IDB_STORE).get(id);
+            req.onsuccess = function() { cb(req.result || null); };
+            req.onerror   = function() { cb(null); };
+        } catch(e) { cb(null); }
+    });
+}
+
+// --- Get ALL from IndexedDB ---
+function idbGetAll(cb) {
+    openIndexedDB(function(db) {
+        if(!db) { cb([]); return; }
+        try {
+            let tx = db.transaction(IDB_STORE, 'readonly');
+            let req = tx.objectStore(IDB_STORE).getAll();
+            req.onsuccess = function() { cb(req.result || []); };
+            req.onerror   = function() { cb([]); };
+        } catch(e) { cb([]); }
+    });
+}
+
+// --- Delete from IndexedDB ---
+function idbDelete(id, cb) {
+    openIndexedDB(function(db) {
+        if(!db) { if(cb) cb(false); return; }
+        try {
+            let tx = db.transaction(IDB_STORE, 'readwrite');
+            let req = tx.objectStore(IDB_STORE).delete(id);
+            req.onsuccess = function() { if(cb) cb(true); };
+            req.onerror   = function() { if(cb) cb(false); };
+        } catch(e) { if(cb) cb(false); }
+    });
+}
+
+// --- Get IndexedDB size (approx) ---
+function idbGetSize(cb) {
+    idbGetAll(function(items) {
+        let totalBytes = items.reduce(function(sum, item) {
+            return sum + (item.data ? item.data.length * 0.75 : 0) +
+                         (item.name ? item.name.length : 0) + 100;
+        }, 0);
+        cb(items.length, (totalBytes / (1024 * 1024)).toFixed(2));
+    });
+}
+
+// --- Smart 3-tier save for media ---
+// Images <50KB → LocalStorage (in appData) + Firebase
+// Images ≥50KB → IndexedDB only (thumbnail in appData)
+// Videos       → IndexedDB only (no Firebase)
+function saveMediaSmart(file, onProgress, onDone) {
+    let isImage = file.type.startsWith('image/');
+    let isVideo = file.type.startsWith('video/');
+
+    let mediaItem = {
+        id: Date.now() + '_' + Math.random().toString(36).substr(2,6),
+        name: file.name,
+        type: isImage ? 'image' : 'video',
+        mimeType: file.type,
+        size: file.size,
+        date: new Date().toISOString(),
+        storage: 'indexeddb', // always default to idb
+        data: null,
+        thumbnail: null
+    };
+
+    if(onProgress) onProgress(10, 'फाइल पढ़ी जा रही है...');
+
+    if(isVideo) {
+        // Videos → always IndexedDB
+        let reader = new FileReader();
+        reader.onload = function(e) {
+            mediaItem.data = e.target.result;
+            mediaItem.storage = 'indexeddb';
+            if(onProgress) onProgress(60, 'IndexedDB में सेव हो रहा है...');
+            idbSave(mediaItem, function(ok) {
+                if(ok) {
+                    // Store only metadata (no data) in appData
+                    let meta = Object.assign({}, mediaItem);
+                    meta.data = null; // don't store binary in appData
+                    appData.mediaFiles.push(meta);
+                    saveToLocalStorage();
+                    if(onProgress) onProgress(100, '✅ Video IndexedDB में सेव हुआ!');
+                    if(onDone) onDone(mediaItem, true);
+                } else {
+                    if(onProgress) onProgress(100, '⚠️ IndexedDB error');
+                    if(onDone) onDone(null, false);
+                }
+            });
+        };
+        reader.readAsDataURL(file);
+
+    } else if(isImage) {
+        // Images → compress first, then decide tier
+        compressImage(file, 200, function(dataUrl) {
+            let sizeKB = (dataUrl.length * 0.75) / 1024;
+            if(onProgress) onProgress(40, `Compressed: ${sizeKB.toFixed(0)}KB`);
+
+            mediaItem.data = dataUrl;
+
+            if(sizeKB < 50) {
+                // Small image → LocalStorage + Firebase
+                mediaItem.storage = 'localstorage';
+                appData.mediaFiles.push(mediaItem);
+                saveToLocalStorage(); // includes Firebase sync
+                if(onProgress) onProgress(100, `✅ Image LocalStorage+Firebase में (${sizeKB.toFixed(0)}KB)`);
+                if(onDone) onDone(mediaItem, true);
+            } else {
+                // Large image → IndexedDB + thumbnail in appData
+                mediaItem.storage = 'indexeddb';
+                // Generate tiny thumbnail for grid preview
+                _makeThumbnail(dataUrl, 120, function(thumb) {
+                    mediaItem.thumbnail = thumb;
+                    if(onProgress) onProgress(70, 'IndexedDB में सेव हो रहा है...');
+                    idbSave(mediaItem, function(ok) {
+                        // Store meta+thumbnail in appData (no full data)
+                        let meta = Object.assign({}, mediaItem);
+                        meta.data = null;
+                        appData.mediaFiles.push(meta);
+                        saveToLocalStorage();
+                        if(onProgress) onProgress(100, `✅ Image IndexedDB में (${sizeKB.toFixed(0)}KB)`);
+                        if(onDone) onDone(mediaItem, ok);
+                    });
+                });
+            }
+        });
+    }
+}
+
+// Generate thumbnail from dataUrl
+function _makeThumbnail(dataUrl, size, cb) {
+    try {
+        let img = new Image();
+        img.onload = function() {
+            let canvas = document.createElement('canvas');
+            canvas.width = size; canvas.height = size;
+            let ctx = canvas.getContext('2d');
+            let s = Math.min(img.width, img.height);
+            let ox = (img.width - s) / 2, oy = (img.height - s) / 2;
+            ctx.drawImage(img, ox, oy, s, s, 0, 0, size, size);
+            cb(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.onerror = function() { cb(dataUrl); };
+        img.src = dataUrl;
+    } catch(e) { cb(dataUrl); }
+}
+
+// Load media for display (from correct tier)
+function loadMediaForDisplay(meta, cb) {
+    if(meta.storage === 'indexeddb') {
+        idbGet(meta.id, function(item) {
+            if(item && item.data) { cb(item.data); }
+            else if(meta.thumbnail) { cb(meta.thumbnail); }
+            else { cb(null); }
+        });
+    } else {
+        // localstorage: data already in meta
+        cb(meta.data || null);
+    }
+}
+
+// Save photo smart (backward compat for member photos)
 function savePhotoSmart(photoDataUrl, key) {
     try {
         localStorage.setItem(key, photoDataUrl);
     } catch(e) { console.warn('Photo LocalStorage save error:', e); }
-    // Only push to Firebase if <20KB
     let sizeKB = (photoDataUrl.length * 0.75) / 1024;
-    if(sizeKB < 20 && db && firebaseConnected) {
-        db.ref(DB_PATH + '/photos/' + key).set(photoDataUrl)
-            .catch(e => console.warn('Photo Firebase save error:', e));
+    if(sizeKB < 20 && firebaseConnected && typeof fbWriteAppData === 'function') {
+        // handled by saveToLocalStorage debounce
     }
 }
+
+// Initialize IndexedDB on startup
+openIndexedDB(function(db) {
+    if(db) console.log('✅ IndexedDB initialized for media storage');
+    else console.warn('⚠️ IndexedDB unavailable');
+});
 
 
 // ==================== APP DATA ====================
@@ -1147,82 +1366,83 @@ function _getLocalStorageSizeKB() {
 
 function _refreshStoragePanel() {
     var panel = document.getElementById('storagePanelContainer');
-    if(!panel) return;
-    var lsSize = _getLocalStorageSizeKB();
-    var queueLen = (typeof offlineQueue !== 'undefined') ? offlineQueue.length : 0;
-    panel.innerHTML = _buildStoragePanelHTML(lsSize, queueLen);
+    if(panel) {
+        var lsSize = _getLocalStorageSizeKB();
+        var queueLen = (typeof offlineQueue !== 'undefined') ? offlineQueue.length : 0;
+        panel.innerHTML = _buildStoragePanelHTML(lsSize, queueLen);
+    }
+    // Update IndexedDB card (async)
+    idbGetSize(function(count, mb) {
+        var el = document.getElementById('idbDashInfo');
+        if(el) el.innerHTML = count + ' files / ' + mb + ' MB';
+    });
 }
 
 function _buildStoragePanelHTML(lsSize, queueLen) {
     var fbOnline = (typeof firebaseConnected !== 'undefined') ? firebaseConnected : false;
-    var lastSync = localStorage.getItem('mandirLastFirebaseSync') || 'कभी नहीं';
     return `
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px;">
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
 
       <!-- Firebase Card -->
-      <div style="background:${fbOnline ? 'linear-gradient(135deg,#e8f5e9,#c8e6c9)' : 'linear-gradient(135deg,#ffeaea,#ffcdd2)'}; 
-                  border:2px solid ${fbOnline ? '#4caf50' : '#ef9a9a'}; 
-                  border-radius:16px; padding:16px; text-align:center; position:relative; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-        <div style="font-size:28px; margin-bottom:6px;">${fbOnline ? '☁️' : '☁️'}</div>
-        <div style="font-weight:800; font-size:13px; color:${fbOnline ? '#2e7d32' : '#c62828'}; margin-bottom:4px;">
-          Firebase ${fbOnline ? '🟢 Connected' : '🔴 Disconnected'}
+      <div style="background:${fbOnline?'linear-gradient(135deg,#e8f5e9,#c8e6c9)':'linear-gradient(135deg,#ffeaea,#ffcdd2)'};
+                  border:2px solid ${fbOnline?'#4caf50':'#ef9a9a'};
+                  border-radius:16px; padding:14px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+        <div style="font-size:26px; margin-bottom:4px;">☁️</div>
+        <div style="font-weight:800; font-size:12px; color:${fbOnline?'#2e7d32':'#c62828'};">
+          Firebase ${fbOnline?'🟢 Connected':'🔴 Offline'}
         </div>
-        <div style="font-size:11px; color:#555; margin-bottom:8px;">
-          ${fbOnline ? 'Real-time sync चालू है' : 'Internet नहीं या Auth error'}
+        <div style="font-size:10px; color:#666; margin:4px 0;">
+          ${fbOnline?'Real-time sync चालू':'Internet नहीं / Auth error'}
         </div>
-        <div style="font-size:10px; background:rgba(255,255,255,0.7); border-radius:8px; padding:4px 8px; margin-bottom:6px;">
-          📌 Path: <code>mandirAppV14</code>
+        <div style="font-size:10px; background:rgba(255,255,255,0.6); border-radius:6px; padding:3px 6px; margin:4px 0;">
+          📌 <code>mandirAppV14</code>
         </div>
-        <div style="font-size:10px; color:#777;">
-          ${fbOnline ? '✅ Auto-sync हर 2 सेकंड (save पर)' : `⏳ Queue: ${queueLen} pending`}
-        </div>
-        ${fbOnline ? '' : `<button onclick="manualFirebaseSync()" 
-          style="margin-top:8px; padding:5px 12px; border-radius:20px; border:none; 
-                 background:#ef5350; color:white; font-size:11px; cursor:pointer; font-weight:700;">
-          🔄 Retry Connect
-        </button>`}
+        ${!fbOnline ? `<button onclick="manualFirebaseSync()"
+          style="margin-top:6px;padding:4px 10px;border-radius:20px;border:none;background:#ef5350;color:white;font-size:10px;cursor:pointer;font-weight:700;">
+          🔄 Retry</button>` : `<div style="font-size:10px;color:#555;">✅ हर 2s auto-sync</div>`}
       </div>
 
       <!-- LocalStorage Card -->
-      <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb); 
-                  border:2px solid #64b5f6; 
-                  border-radius:16px; padding:16px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-        <div style="font-size:28px; margin-bottom:6px;">💾</div>
-        <div style="font-weight:800; font-size:13px; color:#1565c0; margin-bottom:4px;">
-          LocalStorage 🟢 Active
+      <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);
+                  border:2px solid #64b5f6;
+                  border-radius:16px; padding:14px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+        <div style="font-size:26px; margin-bottom:4px;">💾</div>
+        <div style="font-weight:800; font-size:12px; color:#1565c0;">LocalStorage 🟢</div>
+        <div style="font-size:10px; color:#666; margin:4px 0;">App data, छोटी photos</div>
+        <div style="font-size:11px; font-weight:700; color:#1565c0;">${lsSize} KB / 5120 KB</div>
+        <div style="background:rgba(255,255,255,0.5);border-radius:6px;padding:3px;margin-top:4px;">
+          <div style="background:#1976d2;border-radius:4px;height:6px;width:${Math.min(100,(parseFloat(lsSize)/5120)*100).toFixed(1)}%;min-width:3px;transition:width 0.5s;"></div>
         </div>
-        <div style="font-size:11px; color:#555; margin-bottom:8px;">
-          हमेशा चालू – Offline भी काम करे
-        </div>
-        <div style="font-size:10px; background:rgba(255,255,255,0.7); border-radius:8px; padding:4px 8px; margin-bottom:6px;">
-          📦 Size: <strong>${lsSize} KB</strong> / ~5 MB limit
-        </div>
-        <div style="background:#e3f2fd; border-radius:8px; padding:3px; margin-top:4px;">
-          <div style="background:#1976d2; border-radius:6px; height:8px; 
-                      width:${Math.min(100, (parseFloat(lsSize)/5000)*100).toFixed(1)}%;
-                      transition:width 0.5s; min-width:4px;"></div>
-        </div>
-        <div style="font-size:10px; color:#777; margin-top:4px;">
-          ${((parseFloat(lsSize)/5000)*100).toFixed(2)}% उपयोग
-        </div>
+        <div style="font-size:10px;color:#777;margin-top:3px;">${((parseFloat(lsSize)/5120)*100).toFixed(1)}% उपयोग</div>
+      </div>
+
+      <!-- IndexedDB Card -->
+      <div id="idbDashCard" style="background:linear-gradient(135deg,#f3e5f5,#e1bee7);
+                  border:2px solid #ce93d8;
+                  border-radius:16px; padding:14px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+        <div style="font-size:26px; margin-bottom:4px;">🗄️</div>
+        <div style="font-weight:800; font-size:12px; color:#6a1b9a;">IndexedDB 🟢</div>
+        <div style="font-size:10px; color:#666; margin:4px 0;">बड़ी photos, videos</div>
+        <div id="idbDashInfo" style="font-size:11px;font-weight:700;color:#6a1b9a;">लोड हो रहा है...</div>
+        <div style="font-size:10px;color:#777;margin-top:3px;">Limit: GBs (disk का 50%)</div>
       </div>
     </div>
 
     <!-- Sync Status Bar -->
-    <div style="background:linear-gradient(135deg,#fff8e1,#fff3cd); border:1px solid #ffe082; 
+    <div style="background:linear-gradient(135deg,#fff8e1,#fff3cd); border:1px solid #ffe082;
                 border-radius:12px; padding:10px 16px; margin-bottom:16px;
                 display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
       <div style="font-size:12px; color:#5d4037;">
         <strong>🔄 Sync Status:</strong>
-        ${fbOnline 
-          ? `<span style="color:#2e7d32"> ✅ Firebase + LocalStorage दोनों sync</span>`
-          : `<span style="color:#c62828"> ⚠️ सिर्फ LocalStorage (Firebase offline)</span>`}
-        ${queueLen > 0 ? `<span style="color:#e65100"> | 📬 ${queueLen} changes pending</span>` : ''}
+        ${fbOnline
+          ? `<span style="color:#2e7d32;"> ✅ Firebase + LocalStorage दोनों sync</span>`
+          : `<span style="color:#c62828;"> ⚠️ सिर्फ LocalStorage (Firebase offline)</span>`}
+        ${queueLen > 0 ? `<span style="color:#e65100;"> | 📬 ${queueLen} pending</span>` : ''}
       </div>
-      <button onclick="manualFirebaseSync()" 
-        style="padding:5px 14px; border-radius:20px; border:none; 
-               background:linear-gradient(135deg,#FF9933,#e68200); 
-               color:white; font-size:11px; cursor:pointer; font-weight:700; white-space:nowrap;">
+      <button onclick="manualFirebaseSync()"
+        style="padding:5px 14px;border-radius:20px;border:none;
+               background:linear-gradient(135deg,#FF9933,#e68200);
+               color:white;font-size:11px;cursor:pointer;font-weight:700;">
         ☁️ अभी Sync करें
       </button>
     </div>`;
@@ -2074,12 +2294,154 @@ function openSocialLinksModal() { let html = `<div class="modal"><div class="mod
 function saveSocialLinks() { appData.settings.whatsappGroupLink = document.getElementById('editWhatsapp').value; appData.settings.telegramGroupLink = document.getElementById('editTelegram').value; appData.settings.facebookLink = document.getElementById('editFacebook').value; appData.settings.instagramLink = document.getElementById('editInstagram').value; appData.settings.youtubeLink = document.getElementById('editYoutube').value; saveToLocalStorage(); closeModal(); renderSocialLinks(); showToast("✅ सोशल लिंक्स सेव"); }
 
 // ==================== MEDIA MANAGER ====================
-function renderMediaManager() { let html = `<div class="card"><div class="card-title">📷 मीडिया मैनेजर (फोटो/वीडियो)<div><button class="print-btn" onclick="exportMediaHTML()"><i class="fas fa-download"></i> मीडिया डाउनलोड (HTML)</button></div></div><div class="media-upload-area" onclick="document.getElementById('mediaFileInput').click()"><i class="fas fa-cloud-upload-alt fa-2x"></i><p>क्लिक करें या फाइल ड्रॉप करें (फोटो/वीडियो)</p><input type="file" id="mediaFileInput" accept="image/*,video/*" style="display:none" multiple onchange="uploadMediaFiles(this.files)"></div><div id="mediaGalleryGrid" class="gallery-grid"></div>`; document.getElementById('contentArea').innerHTML = html; renderMediaGallery(); }
-function uploadMediaFiles(files) { for(let file of files) { let reader = new FileReader(); reader.onload = function(e) { let mediaItem = { id: Date.now() + Math.random(), type: file.type.startsWith('image') ? 'image' : 'video', data: e.target.result, name: file.name, date: new Date().toISOString() }; appData.mediaFiles.push(mediaItem); saveToLocalStorage(); renderMediaGallery(); }; reader.readAsDataURL(file); } showToast(`📁 ${files.length} फाइल अपलोड हो रही है`); }
-function renderMediaGallery() { let grid = document.getElementById('mediaGalleryGrid'); if(!grid) return; if(appData.mediaFiles.length === 0) { grid.innerHTML = '<p>कोई मीडिया फाइल नहीं</p>'; return; } grid.innerHTML = appData.mediaFiles.map(m => `<div class="gallery-item" onclick="viewMedia('${m.id}')">${m.type === 'image' ? `<img src="${m.data}">` : `<video src="${m.data}" style="width:100%;height:100%;object-fit:cover;"></video>`}<div class="name-tag">${m.name.substring(0,15)}<br><small>${new Date(m.date).toLocaleDateString()}</small></div><button class="remove-media" onclick="event.stopPropagation();deleteMedia('${m.id}')">✖</button></div>`).join(''); saveToLocalStorage(); }
-function viewMedia(id) { let media = appData.mediaFiles.find(m => m.id == id); if(!media) return; let win = window.open('', '_blank'); win.document.write(`<!DOCTYPE html><html><head><title>${media.name}</title><style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#000;}img, video{max-width:100%;max-height:100vh;}</style></head><body>${media.type === 'image' ? `<img src="${media.data}">` : `<video controls autoplay src="${media.data}"></video>`}<div style="position:fixed;bottom:20px;left:0;right:0;text-align:center"><button onclick="window.print()" style="background:#FF9933;padding:10px 20px;border:none;border-radius:8px">🖨️ प्रिंट</button> <button onclick="window.close()">बंद</button></div></body></html>`); win.document.close(); }
-function deleteMedia(id) { if(confirm("क्या आप यह मीडिया हटाना चाहते हैं?")) { appData.mediaFiles = appData.mediaFiles.filter(m => m.id != id); saveToLocalStorage(); renderMediaGallery(); showToast("✅ हटा दिया"); } }
-function exportMediaHTML() { if(appData.mediaFiles.length === 0) { showToast("कोई मीडिया नहीं", true); return; } let html = `<html><head><title>मीडिया गैलरी</title><style>body{font-family:Arial;padding:20px}img,video{max-width:100%}</style></head><body><h1>मंदिर मीडिया गैलरी</h1>`; for(let m of appData.mediaFiles) { html += `<h3>${m.name}</h3>${m.type === 'image' ? `<img src="${m.data}" style="max-width:100%"><br>` : `<video controls src="${m.data}" style="max-width:100%"></video><br>`}`; } html += `</body></html>`; let blob = new Blob([html], {type: 'text/html'}); let a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mandir_media_${new Date().toISOString().slice(0,10)}.html`; a.click(); showToast("📥 मीडिया डाउनलोड शुरू"); }
+function renderMediaManager() {
+    let html = `
+    <div class="card">
+        <div class="card-title">📷 मीडिया मैनेजर
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="print-btn" onclick="exportMediaHTML()"><i class="fas fa-download"></i> डाउनलोड</button>
+                <button class="print-btn" onclick="showStorageInfo()" style="background:linear-gradient(135deg,#17a2b8,#0d7a8a)">🗄️ Storage Info</button>
+            </div>
+        </div>
+        <div id="mediaStorageBar" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+            <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:10px;padding:8px;text-align:center;font-size:11px;">
+                <div style="font-weight:800;color:#2e7d32;">💾 LocalStorage</div>
+                <div id="lsSizeMedia">लोड...</div>
+            </div>
+            <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:10px;padding:8px;text-align:center;font-size:11px;">
+                <div style="font-weight:800;color:#1565c0;">🗄️ IndexedDB</div>
+                <div id="idbSizeMedia">लोड...</div>
+            </div>
+            <div style="background:${firebaseConnected?'#e8f5e9':'#ffeaea'};border:1px solid ${firebaseConnected?'#a5d6a7':'#ef9a9a'};border-radius:10px;padding:8px;text-align:center;font-size:11px;">
+                <div style="font-weight:800;color:${firebaseConnected?'#2e7d32':'#c62828'};">☁️ Firebase</div>
+                <div>${firebaseConnected ? '🟢 Connected' : '🔴 Offline'}</div>
+            </div>
+        </div>
+        <div class="media-upload-area" id="mediaDropZone"
+            onclick="document.getElementById('mediaFileInput').click()"
+            ondragover="event.preventDefault();this.style.borderColor='#FF9933'"
+            ondragleave="this.style.borderColor=''"
+            ondrop="event.preventDefault();this.style.borderColor='';uploadMediaFiles(event.dataTransfer.files)">
+            <i class="fas fa-cloud-upload-alt fa-2x" style="color:#FF9933;"></i>
+            <p><strong>क्लिक करें या Drag & Drop करें</strong></p>
+            <p style="font-size:11px;color:#aaa;">📸 &lt;50KB → LocalStorage+Firebase &nbsp;|&nbsp; 🖼️ ≥50KB → IndexedDB &nbsp;|&nbsp; 🎥 Video → IndexedDB</p>
+            <input type="file" id="mediaFileInput" accept="image/*,video/*" style="display:none" multiple onchange="uploadMediaFiles(this.files)">
+        </div>
+        <div id="mediaUploadProgress" style="display:none;margin:10px 0;">
+            <div style="background:#f0f0f0;border-radius:20px;height:12px;overflow:hidden;">
+                <div id="mediaProgressBar" style="background:linear-gradient(135deg,#FF9933,#e68200);height:100%;width:0%;transition:width 0.3s;border-radius:20px;"></div>
+            </div>
+            <div id="mediaProgressText" style="font-size:12px;color:#666;margin-top:4px;text-align:center;"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap;">
+            <button class="btn-sm btn-primary" onclick="filterMedia('all')">📁 सभी</button>
+            <button class="btn-sm btn-success" onclick="filterMedia('image')">🖼️ Photos</button>
+            <button class="btn-sm" style="background:#6f42c1;color:white;" onclick="filterMedia('video')">🎥 Videos</button>
+            <button class="btn-sm" style="background:#17a2b8;color:white;" onclick="filterMedia('indexeddb')">🗄️ IndexedDB</button>
+            <button class="btn-sm" style="background:#28a745;color:white;" onclick="filterMedia('localstorage')">💾 Local</button>
+        </div>
+        <div id="mediaGalleryGrid" class="gallery-grid"></div>
+    </div>`;
+    document.getElementById('contentArea').innerHTML = html;
+    renderMediaGallery('all');
+    _updateMediaStorageBar();
+}
+function _updateMediaStorageBar() {
+    let lsSize = _getLocalStorageSizeKB();
+    let lsEl = document.getElementById('lsSizeMedia');
+    if(lsEl) lsEl.innerHTML = lsSize + ' KB';
+    idbGetSize(function(count, mb) {
+        let idbEl = document.getElementById('idbSizeMedia');
+        if(idbEl) idbEl.innerHTML = count + ' files / ' + mb + ' MB';
+    });
+}
+let _mediaFilter = 'all';
+function filterMedia(type) { _mediaFilter = type; renderMediaGallery(type); }
+function uploadMediaFiles(files) {
+    let fileArr = Array.from(files);
+    let idx = 0;
+    function processNext() {
+        if(idx >= fileArr.length) { showToast('✅ ' + fileArr.length + ' file(s) अपलोड हुईं'); document.getElementById('mediaUploadProgress').style.display = 'none'; renderMediaGallery(_mediaFilter); _updateMediaStorageBar(); _refreshStoragePanel(); return; }
+        let file = fileArr[idx++];
+        document.getElementById('mediaUploadProgress').style.display = 'block';
+        saveMediaSmart(file, function(pct, msg) { document.getElementById('mediaProgressBar').style.width = pct + '%'; document.getElementById('mediaProgressText').innerHTML = '[' + idx + '/' + fileArr.length + '] ' + file.name + ': ' + msg; }, function(item, ok) { if(!ok) showToast('⚠️ ' + file.name + ' सेव नहीं हुआ', true); processNext(); });
+    }
+    processNext();
+}
+function renderMediaGallery(filter) {
+    filter = filter || _mediaFilter || 'all';
+    let grid = document.getElementById('mediaGalleryGrid');
+    if(!grid) return;
+    let items = appData.mediaFiles.filter(function(m) {
+        if(filter === 'all') return true;
+        if(filter === 'image') return m.type === 'image';
+        if(filter === 'video') return m.type === 'video';
+        if(filter === 'indexeddb') return m.storage === 'indexeddb';
+        if(filter === 'localstorage') return m.storage === 'localstorage' || !m.storage;
+        return true;
+    });
+    if(items.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#aaa;">कोई मीडिया नहीं</div>'; return; }
+    grid.innerHTML = items.map(function(m) {
+        let preview = m.thumbnail || m.data || '';
+        let storageIcon = m.storage === 'indexeddb' ? '🗄️' : '💾';
+        let sizeStr = m.size ? (m.size > 1048576 ? (m.size/1048576).toFixed(1)+'MB' : (m.size/1024).toFixed(0)+'KB') : '';
+        return '<div class="gallery-item" id="gitem_' + m.id + '" onclick="viewMedia(\'' + m.id + '\')">' +
+            (m.type === 'image' ? (preview ? '<img src="' + preview + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:32px;">🖼️</div>') : '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;background:#1a1a2e;"><span style="font-size:36px;">🎥</span><span style="font-size:10px;color:#aaa;margin-top:4px;">' + sizeStr + '</span></div>') +
+            '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:white;font-size:9px;padding:3px 5px;">' + storageIcon + ' ' + (m.name ? m.name.substring(0,14) : '') + '<span style="float:right;color:#aaa;">' + sizeStr + '</span></div>' +
+            '<button onclick="event.stopPropagation();deleteMedia(\'' + m.id + '\')" style="position:absolute;top:4px;right:4px;background:rgba(220,53,69,0.85);border:none;border-radius:50%;width:22px;height:22px;color:white;cursor:pointer;font-size:12px;line-height:22px;text-align:center;">✖</button>' +
+            '</div>';
+    }).join('');
+    items.forEach(function(m) {
+        if(m.storage === 'indexeddb' && m.type === 'image' && !m.thumbnail) {
+            idbGet(m.id, function(item) {
+                if(!item) return;
+                let el = document.getElementById('gitem_' + m.id);
+                if(el && item.data) { let img = el.querySelector('img'); if(!img) { let div = el.querySelector('div'); if(div) div.innerHTML = '<img src="' + item.data + '" style="width:100%;height:100%;object-fit:cover;">'; } }
+            });
+        }
+    });
+}
+function viewMedia(id) {
+    let meta = appData.mediaFiles.find(function(m) { return String(m.id) === String(id); });
+    if(!meta) return;
+    loadMediaForDisplay(meta, function(dataUrl) {
+        if(!dataUrl) { showToast('⚠️ मीडिया लोड नहीं हो सका', true); return; }
+        let win = window.open('', '_blank');
+        if(!win) { showToast('❌ Popup blocked!', true); return; }
+        win.document.write('<!DOCTYPE html><html><head><title>' + (meta.name||'Media') + '</title><style>body{margin:0;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;flex-direction:column;}img,video{max-width:100%;max-height:90vh;}.bar{position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:10px;text-align:center;}button{background:#FF9933;color:white;border:none;padding:8px 18px;border-radius:20px;cursor:pointer;margin:4px;}</style></head><body>' + (meta.type==='image'?'<img src="'+dataUrl+'">':'<video controls autoplay src="'+dataUrl+'" style="max-width:100%;max-height:90vh;"></video>') + '<div class="bar"><button onclick="window.print()">🖨️ Print</button><button onclick="var a=document.createElement(\'a\');a.href=\''+dataUrl+'\';a.download=\''+(meta.name||'media')+'\';a.click()">⬇️ Download</button><button onclick="window.close()">✖ बंद</button></div></body></html>');
+        win.document.close();
+    });
+}
+function deleteMedia(id) {
+    if(!confirm('क्या यह मीडिया हटाना चाहते हैं?')) return;
+    let meta = appData.mediaFiles.find(function(m) { return String(m.id) === String(id); });
+    if(meta && meta.storage === 'indexeddb') idbDelete(id, function() {});
+    appData.mediaFiles = appData.mediaFiles.filter(function(m) { return String(m.id) !== String(id); });
+    saveToLocalStorage(); renderMediaGallery(_mediaFilter); _updateMediaStorageBar(); showToast('✅ हटा दिया गया');
+}
+function showStorageInfo() {
+    let lsSize = _getLocalStorageSizeKB();
+    idbGetSize(function(idbCount, idbMB) {
+        let html = '<div class="modal"><div class="modal-content" style="max-width:480px;"><h3>🗄️ Storage जानकारी</h3><table style="width:100%;border-collapse:collapse;margin:15px 0;"><tr style="background:#f8f9fa;"><th style="padding:10px;text-align:left;">Storage</th><th>क्या Store</th><th>Size</th><th>Limit</th></tr><tr style="border-bottom:1px solid #eee;"><td style="padding:10px;">💾 LocalStorage</td><td>App Data, छोटी Photos</td><td>' + lsSize + ' KB</td><td>~5 MB</td></tr><tr style="border-bottom:1px solid #eee;"><td style="padding:10px;">🗄️ IndexedDB</td><td>बड़ी Photos, Videos</td><td>' + idbMB + ' MB (' + idbCount + ' files)</td><td>GBs</td></tr><tr><td style="padding:10px;">☁️ Firebase</td><td>App Data Sync</td><td>Cloud</td><td>1 GB free</td></tr></table><div style="background:#fff8e1;border-radius:10px;padding:12px;font-size:12px;margin-bottom:12px;"><strong>📋 Storage Logic:</strong><br>🖼️ Image &lt;50KB → LocalStorage + Firebase<br>🖼️ Image ≥50KB → IndexedDB<br>🎥 Video → IndexedDB<br>📊 App Data → LocalStorage + Firebase</div><button class="btn btn-secondary" onclick="closeModal()">बंद</button></div></div>';
+        document.body.insertAdjacentHTML('beforeend', html);
+    });
+}
+function exportMediaHTML() {
+    if(appData.mediaFiles.length === 0) { showToast('कोई मीडिया नहीं', true); return; }
+    showToast('📦 Export तैयार हो रहा है...');
+    let pending = appData.mediaFiles.filter(function(m) { return m.storage === 'indexeddb'; });
+    let lsItems = appData.mediaFiles.filter(function(m) { return m.storage !== 'indexeddb'; });
+    let allItems = lsItems.slice(); let done = 0;
+    function buildAndDownload() {
+        let html = '<html><head><title>मंदिर मीडिया गैलरी</title><style>body{font-family:Arial;padding:20px;background:#f5f5f5;}h1{color:#FF9933;}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:15px;}.item{background:white;border-radius:12px;overflow:hidden;}img,video{width:100%;max-height:200px;object-fit:cover;}.caption{padding:8px;font-size:12px;}</style></head><body><h1>🚩 मंदिर मीडिया गैलरी</h1><div class="grid">';
+        allItems.forEach(function(m) { html += '<div class="item">' + (m.type==='image'?'<img src="'+(m.data||m.thumbnail||'')+'">':'<video controls src="'+(m.data||'')+'"></video>') + '<div class="caption">'+(m.name||'')+'</div></div>'; });
+        html += '</div></body></html>';
+        let blob = new Blob([html], {type:'text/html'}); let a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mandir_media_' + new Date().toISOString().slice(0,10) + '.html'; a.click(); showToast('📥 Export complete!');
+    }
+    if(pending.length === 0) { buildAndDownload(); return; }
+    pending.forEach(function(meta) { idbGet(meta.id, function(item) { allItems.push(Object.assign({}, meta, {data: item?item.data:(meta.thumbnail||'')})); done++; if(done === pending.length) buildAndDownload(); }); });
+}
+
 
 // ==================== CLOUD BACKUP ====================
 function cloudBackup() { let dataStr = JSON.stringify(appData); let blob = new Blob([dataStr], {type: 'application/json'}); let url = URL.createObjectURL(blob); let a = document.createElement('a'); a.href = url; a.download = `mandir_backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url); showToast("✅ बैकअप डाउनलोड हो गया"); addAuditLog("CLOUD_BACKUP", "बैकअप डाउनलोड किया"); }
@@ -2145,6 +2507,11 @@ function renderDashboard() {
     <p><strong>उद्देश्य:</strong> ${appData.settings.committeeObjective || "भव्य मंदिर निर्माण एवं धार्मिक कार्यों का संचालन"}</p>
     <p><strong>🎯 मासिक टारगेट:</strong> ₹${(appData.settings.monthlyTarget || 50000).toLocaleString()}</p></div>`;
     document.getElementById('contentArea').innerHTML = html;
+    // Load IndexedDB size async into dashboard card
+    idbGetSize(function(count, mb) {
+        var el = document.getElementById('idbDashInfo');
+        if(el) el.innerHTML = count + ' files / ' + mb + ' MB';
+    });
     let ctx1 = document.getElementById('monthChart')?.getContext('2d');
     if(ctx1) { if(dashboardMonthChart) dashboardMonthChart.destroy(); dashboardMonthChart = new Chart(ctx1, { type:'bar', data:{ labels:monthsShort, datasets:[{ label:'आय', data:monthlyIncome, backgroundColor:'#28a745' },{ label:'व्यय', data:monthlyExpense, backgroundColor:'#dc3545' }] }, options: { onClick: (event, elements) => { if(elements.length > 0) { let el = elements[0]; let dsIdx = el.datasetIndex; let idx = el.index; let label = monthsShort[idx]; let val = dsIdx===0 ? monthlyIncome[idx] : monthlyExpense[idx]; let total = dsIdx===0 ? monthlyIncome.reduce((a,b)=>a+b,0) : monthlyExpense.reduce((a,b)=>a+b,0); let pct = total > 0 ? ((val/total)*100).toFixed(1) : 0; let type = dsIdx===0?'आय':'व्यय'; showToast(`📅 ${label} - ${type}: ₹${val.toLocaleString()} (${pct}%)`); } }, plugins: { tooltip: { callbacks: { afterLabel: (ctx) => { let total = ctx.dataset.data.reduce((a,b)=>a+b,0); let pct = total > 0 ? ((ctx.raw/total)*100).toFixed(1) : 0; return `कुल का ${pct}%`; } } } } } }); }
     let ctx2 = document.getElementById('yearChart')?.getContext('2d');
